@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>現場スキャンWeb</title>
+    <title>現場スキャンWeb - OCR</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" href="icons/icon-192.png">
     <meta name="theme-color" content="#212529">
@@ -49,12 +49,22 @@
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
-        #reader {
+        #cameraContainer {
+            position: relative;
             width: 100%;
             background: black;
             border-radius: 12px;
             overflow: hidden;
             margin-bottom: 1rem;
+        }
+
+        #video {
+            width: 100%;
+            display: block;
+        }
+
+        #canvas {
+            display: none;
         }
 
         .scan-list {
@@ -112,13 +122,43 @@
             width: 3em;
             height: 1.5em;
         }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            color: white;
+        }
+
+        .loading-overlay.d-none {
+            display: none !important;
+        }
+
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
     </style>
 </head>
 
 <body>
 
+    <!-- ローディングオーバーレイ -->
+    <div class="loading-overlay d-none" id="loadingOverlay">
+        <div class="spinner-border text-light mb-3" role="status"></div>
+        <div id="loadingText">読み取り中...</div>
+    </div>
+
     <div class="header">
-        現場スキャンWeb
+        現場スキャンWeb - OCR
     </div>
 
     <div class="container">
@@ -152,14 +192,20 @@
             </div>
         </div>
 
-        <!-- スキャンエリア -->
-        <div id="reader"></div>
+        <!-- カメラエリア -->
+        <div id="cameraContainer">
+            <video id="video" autoplay playsinline></video>
+        </div>
+        <canvas id="canvas"></canvas>
 
-        <button class="btn btn-success w-100 btn-huge" id="startScan">
-            📷 スキャン開始
+        <button class="btn btn-success w-100 btn-huge" id="startCamera">
+            📷 カメラ起動
         </button>
-        <button class="btn btn-danger w-100 btn-huge d-none" id="stopScan">
-            ⏹️ スキャン停止
+        <button class="btn btn-warning w-100 btn-huge d-none" id="captureBtn">
+            📸 撮影して読み取り
+        </button>
+        <button class="btn btn-danger w-100 btn-huge d-none" id="stopCamera">
+            ⏹️ カメラ停止
         </button>
 
         <!-- リスト表示エリア -->
@@ -191,14 +237,17 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
     <script>
         // --- 定数・変数 ---
-        const html5QrCode = new Html5Qrcode("reader");
         let scanResults = [];
-        let isScanning = false;
         let preventDuplicate = true;
+        let stream = null;
+
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
 
         // 音声フィードバック用 (Web Audio API)
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -215,36 +264,80 @@
         }
 
         // --- UI要素 ---
-        const startBtn = document.getElementById('startScan');
-        const stopBtn = document.getElementById('stopScan');
+        const startCameraBtn = document.getElementById('startCamera');
+        const stopCameraBtn = document.getElementById('stopCamera');
+        const captureBtn = document.getElementById('captureBtn');
         const scanList = document.getElementById('scanList');
         const scanCount = document.getElementById('scanCount');
         const preventDuplicateCheckbox = document.getElementById('preventDuplicate');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const loadingText = document.getElementById('loadingText');
 
-        // --- スキャン制御 ---
-        const qrConfig = { fps: 10, qrbox: { width: 250, height: 250 } };
-
-        const onScanSuccess = (decodedText, decodedResult) => {
-            addScanResult(decodedText);
-        };
-
-        async function startScanning() {
+        // --- カメラ制御 ---
+        async function startCamera() {
             try {
-                isScanning = true;
-                startBtn.classList.add('d-none');
-                stopBtn.classList.remove('d-none');
-                await html5QrCode.start({ facingMode: "environment" }, qrConfig, onScanSuccess);
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' } 
+                });
+                video.srcObject = stream;
+                startCameraBtn.classList.add('d-none');
+                captureBtn.classList.remove('d-none');
+                stopCameraBtn.classList.remove('d-none');
             } catch (err) {
-                alert("カメラの起動に失敗しました。HTTPS接続であることを確認してください。");
-                stopScanning();
+                alert("カメラの起動に失敗しました。HTTPS接続であることと、カメラ権限を確認してください。");
             }
         }
 
-        async function stopScanning() {
-            isScanning = false;
-            startBtn.classList.remove('d-none');
-            stopBtn.classList.add('d-none');
-            try { await html5QrCode.stop(); } catch (err) { }
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            video.srcObject = null;
+            startCameraBtn.classList.remove('d-none');
+            captureBtn.classList.add('d-none');
+            stopCameraBtn.classList.add('d-none');
+        }
+
+        async function captureAndRecognize() {
+            // カメラ映像をキャンバスに描画
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0);
+
+            // ローディング表示
+            loadingOverlay.classList.remove('d-none');
+            loadingText.textContent = 'OCR処理中...';
+
+            try {
+                // Tesseractで数字認識
+                const result = await Tesseract.recognize(
+                    canvas,
+                    'eng',
+                    {
+                        logger: m => {
+                            if (m.status === 'recognizing text') {
+                                loadingText.textContent = `認識中... ${Math.round(m.progress * 100)}%`;
+                            }
+                        }
+                    }
+                );
+
+                // 数字のみを抽出
+                const numbers = result.data.text.replace(/[^0-9]/g, '');
+
+                if (numbers.length > 0) {
+                    addScanResult(numbers);
+                } else {
+                    alert("数字が認識できませんでした。\n明るい場所で、カメラを数字に近づけて再度お試しください。");
+                }
+            } catch (err) {
+                alert("OCR処理中にエラーが発生しました。");
+                console.error(err);
+            } finally {
+                loadingOverlay.classList.add('d-none');
+            }
         }
 
         // --- データ保存 (localStorage) ---
@@ -281,8 +374,8 @@
         }
 
         function addScanResult(code) {
-            // 重複防止がONの場合、リスト内に同じコードがあればスキップ
             if (preventDuplicate && scanResults.includes(code)) {
+                alert("この番号は既にリストにあります: " + code);
                 return;
             }
             playBeep();
@@ -350,11 +443,9 @@
         }
 
         // --- イベントリスナー ---
-        startBtn.addEventListener('click', () => {
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            startScanning();
-        });
-        stopBtn.addEventListener('click', stopScanning);
+        startCameraBtn.addEventListener('click', startCamera);
+        stopCameraBtn.addEventListener('click', stopCamera);
+        captureBtn.addEventListener('click', captureAndRecognize);
         document.getElementById('clearList').addEventListener('click', clearAll);
         document.getElementById('saveSettings').addEventListener('click', saveSettings);
         document.getElementById('sendEmail').addEventListener('click', sendEmail);
