@@ -129,7 +129,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.7);
+            background: rgba(0, 0, 0, 0.7);
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -162,6 +162,11 @@
     </div>
 
     <div class="container">
+        <!-- デバッグログエリア -->
+        <div id="debugLog" class="d-none"
+            style="background: #333; color: #0f0; padding: 10px; margin-bottom: 1rem; border-radius: 8px; font-family: monospace; font-size: 0.8rem; max-height: 200px; overflow-y: auto;">
+        </div>
+
         <!-- 設定エリア -->
         <div class="accordion mb-3" id="settingsAccordion">
             <div class="accordion-item">
@@ -194,7 +199,7 @@
 
         <!-- カメラエリア -->
         <div id="cameraContainer">
-            <video id="video" autoplay playsinline></video>
+            <video id="video" autoplay playsinline muted></video>
         </div>
         <canvas id="canvas"></canvas>
 
@@ -234,12 +239,37 @@
                 </button>
             </div>
         </div>
+        <div class="text-center mt-2">
+            <button class="btn btn-link btn-sm text-muted" onclick="toggleDebug()">デバッグ表示</button>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
     <script>
+        // --- デバッグ機能 ---
+        const debugLog = document.getElementById('debugLog');
+        function log(msg) {
+            console.log(msg);
+            const div = document.createElement('div');
+            div.textContent = `[LOG] ${msg}`;
+            debugLog.prepend(div);
+        }
+        function error(msg) {
+            console.error(msg);
+            const div = document.createElement('div');
+            div.style.color = '#f88';
+            div.textContent = `[ERR] ${msg}`;
+            debugLog.prepend(div);
+        }
+        function toggleDebug() {
+            debugLog.classList.toggle('d-none');
+        }
+        window.onerror = function (msg, url, line) {
+            error(`${msg} (${line})`);
+        };
+
         // --- 定数・変数 ---
         let scanResults = [];
         let preventDuplicate = true;
@@ -275,21 +305,33 @@
 
         // --- カメラ制御 ---
         async function startCamera() {
+            log("カメラ起動を開始します...");
             try {
                 if (audioCtx.state === 'suspended') audioCtx.resume();
-                stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: 'environment' } 
+
+                log("getUserMediaを実行中...");
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' }
                 });
+                log("カメラストリーム取得成功");
+
                 video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    log("映像メタデータ読み込み完了");
+                };
+
                 startCameraBtn.classList.add('d-none');
                 captureBtn.classList.remove('d-none');
                 stopCameraBtn.classList.remove('d-none');
+                log("ボタン表示を更新しました");
             } catch (err) {
-                alert("カメラの起動に失敗しました。HTTPS接続であることと、カメラ権限を確認してください。");
+                error("カメラ起動エラー: " + err.name + " - " + err.message);
+                alert("カメラの起動に失敗しました。\nエラー: " + err.message + "\nHTTPS接続と権限を確認してください。");
             }
         }
 
         function stopCamera() {
+            log("カメラを停止します");
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
                 stream = null;
@@ -301,6 +343,7 @@
         }
 
         async function captureAndRecognize() {
+            log("撮影ボタンが押されました");
             // カメラ映像をキャンバスに描画
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
@@ -311,6 +354,7 @@
             loadingText.textContent = 'OCR処理中...';
 
             try {
+                log("Tesseract認識開始");
                 // Tesseractで数字認識
                 const result = await Tesseract.recognize(
                     canvas,
@@ -323,6 +367,7 @@
                         }
                     }
                 );
+                log("認識完了: " + result.data.text);
 
                 // 数字のみを抽出
                 const numbers = result.data.text.replace(/[^0-9]/g, '');
@@ -333,6 +378,7 @@
                     alert("数字が認識できませんでした。\n明るい場所で、カメラを数字に近づけて再度お試しください。");
                 }
             } catch (err) {
+                error("OCRエラー: " + err.message);
                 alert("OCR処理中にエラーが発生しました。");
                 console.error(err);
             } finally {
@@ -457,9 +503,9 @@
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./sw.js').then(reg => {
-                    console.log('Service Worker registered.', reg);
+                    log('Service Worker registered');
                 }).catch(err => {
-                    console.log('Service Worker registration failed.', err);
+                    error('Service Worker failed: ' + err);
                 });
             });
         }
