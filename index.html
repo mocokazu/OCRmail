@@ -15,9 +15,9 @@
     <style>
         :root {
             --primary-color: #0d6efd;
-            --bg-color: #f8f9fa;
-            --text-color: #212529;
-            --btn-height: 70px;
+            --bg-color: #1a1a1a;
+            --text-color: #f8f9fa;
+            --shutter-size: 80px;
         }
 
         body {
@@ -25,63 +25,81 @@
             background-color: var(--bg-color);
             color: var(--text-color);
             padding-bottom: 120px;
+            margin: 0;
         }
 
         .header {
             background-color: #212529;
             color: white;
-            padding: 1rem;
+            padding: 0.75rem;
             text-align: center;
             font-weight: bold;
-            font-size: 1.25rem;
-            margin-bottom: 1rem;
+            font-size: 1rem;
         }
 
-        .btn-huge {
-            height: var(--btn-height);
-            font-size: 1.5rem;
-            font-weight: bold;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 1rem;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-
+        /* カメラエリア - 画面いっぱいに */
         #cameraContainer {
             position: relative;
             width: 100%;
+            height: 60vh;
             background: black;
-            border-radius: 12px;
             overflow: hidden;
-            margin-bottom: 1rem;
         }
 
         #video {
             width: 100%;
-            display: block;
+            height: 100%;
+            object-fit: cover;
         }
 
         #canvas {
             display: none;
         }
 
+        /* 読み取りガイド枠 */
+        .guide-frame {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            height: 60px;
+            border: 3px solid #00ff00;
+            border-radius: 8px;
+            pointer-events: none;
+        }
+
+        .guide-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, calc(-50% - 50px));
+            color: #00ff00;
+            font-size: 0.9rem;
+            text-shadow: 0 0 5px black;
+        }
+
+        /* リスト表示 */
+        .list-section {
+            padding: 1rem;
+        }
+
         .scan-list {
-            background: white;
+            background: #2a2a2a;
             border-radius: 12px;
             padding: 0;
             margin-bottom: 1rem;
-            border: 1px solid #dee2e6;
+            border: 1px solid #444;
         }
 
         .scan-item {
             padding: 1rem;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid #444;
             display: flex;
             justify-content: space-between;
             align-items: center;
             font-size: 1.2rem;
+            color: white;
         }
 
         .scan-item:last-child {
@@ -91,17 +109,7 @@
         .scan-item .code {
             font-family: monospace;
             font-weight: bold;
-        }
-
-        .action-bar {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: white;
-            padding: 1rem;
-            box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.1);
-            z-index: 1000;
+            letter-spacing: 2px;
         }
 
         .text-large {
@@ -109,27 +117,58 @@
             font-weight: 600;
         }
 
-        .form-label {
+        /* メール送信ボタン（リスト下） */
+        .btn-send {
+            height: 60px;
+            font-size: 1.3rem;
             font-weight: bold;
+            border-radius: 12px;
+            margin-bottom: 1rem;
         }
 
-        .form-check-input:checked {
-            background-color: #198754;
-            border-color: #198754;
+        /* シャッターボタン（フッター） */
+        .shutter-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 1rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
         }
 
-        .form-switch .form-check-input {
-            width: 3em;
-            height: 1.5em;
+        .shutter-btn {
+            width: var(--shutter-size);
+            height: var(--shutter-size);
+            border-radius: 50%;
+            background: white;
+            border: 4px solid #ccc;
+            box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.3);
+            cursor: pointer;
+            transition: transform 0.1s;
         }
 
+        .shutter-btn:active {
+            transform: scale(0.9);
+            background: #ddd;
+        }
+
+        .shutter-btn:disabled {
+            background: #666;
+            border-color: #888;
+        }
+
+        /* ローディング */
         .loading-overlay {
             position: fixed;
             top: 0;
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.8);
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -146,6 +185,38 @@
             width: 3rem;
             height: 3rem;
         }
+
+        /* 設定アコーディオン */
+        .accordion-button {
+            background-color: #333;
+            color: white;
+        }
+
+        .accordion-button:not(.collapsed) {
+            background-color: #444;
+            color: white;
+        }
+
+        .accordion-body {
+            background-color: #2a2a2a;
+        }
+
+        .form-label {
+            color: white;
+        }
+
+        /* カウンター */
+        .counter-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #00ff00;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
     </style>
 </head>
 
@@ -158,18 +229,23 @@
     </div>
 
     <div class="header">
-        現場スキャンWeb - OCR
+        現場スキャンWeb
     </div>
 
-    <div class="container">
-        <!-- デバッグログエリア -->
-        <div id="debugLog" class="d-none"
-            style="background: #333; color: #0f0; padding: 10px; margin-bottom: 1rem; border-radius: 8px; font-family: monospace; font-size: 0.8rem; max-height: 200px; overflow-y: auto;">
-        </div>
+    <!-- カメラエリア -->
+    <div id="cameraContainer">
+        <video id="video" autoplay playsinline muted></video>
+        <div class="guide-frame"></div>
+        <div class="guide-text">ここに文字を合わせてください</div>
+        <div class="counter-badge"><span id="scanCount">0</span> 件</div>
+    </div>
+    <canvas id="canvas"></canvas>
 
-        <!-- 設定エリア -->
+    <!-- リスト＆設定エリア -->
+    <div class="list-section">
+        <!-- 設定アコーディオン -->
         <div class="accordion mb-3" id="settingsAccordion">
-            <div class="accordion-item">
+            <div class="accordion-item border-0">
                 <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
                         data-bs-target="#collapseSettings">
@@ -189,7 +265,7 @@
                         </div>
                         <div class="mb-3 form-check form-switch">
                             <input class="form-check-input" type="checkbox" role="switch" id="preventDuplicate" checked>
-                            <label class="form-check-label" for="preventDuplicate">重複読み取り防止</label>
+                            <label class="form-check-label text-white" for="preventDuplicate">重複読み取り防止</label>
                         </div>
                         <button class="btn btn-primary w-100 btn-lg" id="saveSettings">設定を保存</button>
                     </div>
@@ -197,83 +273,37 @@
             </div>
         </div>
 
-        <!-- カメラエリア -->
-        <div id="cameraContainer">
-            <video id="video" autoplay playsinline muted></video>
-        </div>
-        <canvas id="canvas"></canvas>
-
-        <button class="btn btn-success w-100 btn-huge" id="startCamera">
-            📷 カメラ起動
-        </button>
-        <button class="btn btn-warning w-100 btn-huge d-none" id="captureBtn">
-            📸 撮影して読み取り
-        </button>
-        <button class="btn btn-danger w-100 btn-huge d-none" id="stopCamera">
-            ⏹️ カメラ停止
-        </button>
-
-        <!-- リスト表示エリア -->
+        <!-- リスト表示 -->
         <div class="d-flex justify-content-between align-items-center mb-2">
-            <span class="text-large">読み取りリスト (<span id="scanCount">0</span>件)</span>
+            <span class="text-large">読み取りリスト</span>
             <button class="btn btn-outline-danger btn-sm" id="clearList">全削除</button>
         </div>
         <div class="scan-list" id="scanList">
-            <div class="p-3 text-center text-muted" id="emptyMessage">
+            <div class="p-3 text-center text-muted">
                 データがありません。
             </div>
         </div>
+
+        <!-- メール送信ボタン（リスト下） -->
+        <button class="btn btn-primary w-100 btn-send" id="sendEmail">
+            📧 メールで送信
+        </button>
     </div>
 
-    <!-- 下部固定アクションエリア -->
-    <div class="action-bar">
-        <div class="row g-2">
-            <div class="col-8">
-                <button class="btn btn-primary w-100 btn-huge" id="sendEmail">
-                    📧 メール送信
-                </button>
-            </div>
-            <div class="col-4">
-                <button class="btn btn-secondary w-100 btn-huge" id="copyToClipboard">
-                    📋
-                </button>
-            </div>
-        </div>
-        <div class="text-center mt-2">
-            <button class="btn btn-link btn-sm text-muted" onclick="toggleDebug()">デバッグ表示</button>
-        </div>
+    <!-- シャッターボタン（フッター） -->
+    <div class="shutter-bar">
+        <button class="shutter-btn" id="shutterBtn" disabled></button>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
     <script>
-        // --- デバッグ機能 ---
-        const debugLog = document.getElementById('debugLog');
-        function log(msg) {
-            console.log(msg);
-            const div = document.createElement('div');
-            div.textContent = `[LOG] ${msg}`;
-            debugLog.prepend(div);
-        }
-        function error(msg) {
-            console.error(msg);
-            const div = document.createElement('div');
-            div.style.color = '#f88';
-            div.textContent = `[ERR] ${msg}`;
-            debugLog.prepend(div);
-        }
-        function toggleDebug() {
-            debugLog.classList.toggle('d-none');
-        }
-        window.onerror = function (msg, url, line) {
-            error(`${msg} (${line})`);
-        };
-
         // --- 定数・変数 ---
         let scanResults = [];
         let preventDuplicate = true;
         let stream = null;
+        let isReady = false;
 
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
@@ -294,56 +324,36 @@
         }
 
         // --- UI要素 ---
-        const startCameraBtn = document.getElementById('startCamera');
-        const stopCameraBtn = document.getElementById('stopCamera');
-        const captureBtn = document.getElementById('captureBtn');
+        const shutterBtn = document.getElementById('shutterBtn');
         const scanList = document.getElementById('scanList');
         const scanCount = document.getElementById('scanCount');
         const preventDuplicateCheckbox = document.getElementById('preventDuplicate');
         const loadingOverlay = document.getElementById('loadingOverlay');
         const loadingText = document.getElementById('loadingText');
 
-        // --- カメラ制御 ---
+        // --- カメラ自動起動 ---
         async function startCamera() {
-            log("カメラ起動を開始します...");
             try {
                 if (audioCtx.state === 'suspended') audioCtx.resume();
 
-                log("getUserMediaを実行中...");
                 stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: 'environment' }
                 });
-                log("カメラストリーム取得成功");
 
                 video.srcObject = stream;
                 video.onloadedmetadata = () => {
-                    log("映像メタデータ読み込み完了");
+                    isReady = true;
+                    shutterBtn.disabled = false;
                 };
-
-                startCameraBtn.classList.add('d-none');
-                captureBtn.classList.remove('d-none');
-                stopCameraBtn.classList.remove('d-none');
-                log("ボタン表示を更新しました");
             } catch (err) {
-                error("カメラ起動エラー: " + err.name + " - " + err.message);
                 alert("カメラの起動に失敗しました。\nエラー: " + err.message + "\nHTTPS接続と権限を確認してください。");
             }
         }
 
-        function stopCamera() {
-            log("カメラを停止します");
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                stream = null;
-            }
-            video.srcObject = null;
-            startCameraBtn.classList.remove('d-none');
-            captureBtn.classList.add('d-none');
-            stopCameraBtn.classList.add('d-none');
-        }
-
+        // --- 撮影＆OCR処理 ---
         async function captureAndRecognize() {
-            log("撮影ボタンが押されました");
+            if (!isReady) return;
+
             // カメラ映像をキャンバスに描画
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
@@ -352,10 +362,10 @@
             // ローディング表示
             loadingOverlay.classList.remove('d-none');
             loadingText.textContent = 'OCR処理中...';
+            shutterBtn.disabled = true;
 
             try {
-                log("Tesseract認識開始");
-                // Tesseractで数字認識
+                // Tesseractで英数字認識
                 const result = await Tesseract.recognize(
                     canvas,
                     'eng',
@@ -367,22 +377,21 @@
                         }
                     }
                 );
-                log("認識完了: " + result.data.text);
 
-                // 数字のみを抽出
-                const numbers = result.data.text.replace(/[^0-9]/g, '');
+                // 英数字のみを抽出（スペース・改行除去）
+                const alphanumeric = result.data.text.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 
-                if (numbers.length > 0) {
-                    addScanResult(numbers);
+                if (alphanumeric.length > 0) {
+                    addScanResult(alphanumeric);
                 } else {
-                    alert("数字が認識できませんでした。\n明るい場所で、カメラを数字に近づけて再度お試しください。");
+                    alert("文字が認識できませんでした。\n明るい場所で、カメラを文字に近づけて再度お試しください。");
                 }
             } catch (err) {
-                error("OCRエラー: " + err.message);
                 alert("OCR処理中にエラーが発生しました。");
                 console.error(err);
             } finally {
                 loadingOverlay.classList.add('d-none');
+                shutterBtn.disabled = false;
             }
         }
 
@@ -458,7 +467,7 @@
             }
         }
 
-        // --- 外部連携 (メール・コピー) ---
+        // --- メール送信 ---
         function sendEmail() {
             const to = document.getElementById('emailTo').value;
             const subject = document.getElementById('emailSubject').value;
@@ -475,37 +484,25 @@
             window.location.href = mailtoUrl;
         }
 
-        function copyToClipboard() {
-            if (scanResults.length === 0) {
-                alert("コピーするデータがありません。");
-                return;
-            }
-            const text = scanResults.join('\n');
-            navigator.clipboard.writeText(text).then(() => {
-                alert("リストをクリップボードにコピーしました。");
-            }).catch(err => {
-                alert("コピーに失敗しました。");
-            });
-        }
-
         // --- イベントリスナー ---
-        startCameraBtn.addEventListener('click', startCamera);
-        stopCameraBtn.addEventListener('click', stopCamera);
-        captureBtn.addEventListener('click', captureAndRecognize);
+        shutterBtn.addEventListener('click', captureAndRecognize);
         document.getElementById('clearList').addEventListener('click', clearAll);
         document.getElementById('saveSettings').addEventListener('click', saveSettings);
         document.getElementById('sendEmail').addEventListener('click', sendEmail);
-        document.getElementById('copyToClipboard').addEventListener('click', copyToClipboard);
 
-        window.addEventListener('load', loadFromLocal);
+        // 初期化
+        window.addEventListener('load', () => {
+            loadFromLocal();
+            startCamera(); // 自動でカメラ起動
+        });
 
         // --- PWA Service Worker 登録 ---
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./sw.js').then(reg => {
-                    log('Service Worker registered');
+                    console.log('Service Worker registered.', reg);
                 }).catch(err => {
-                    error('Service Worker failed: ' + err);
+                    console.log('Service Worker registration failed.', err);
                 });
             });
         }
