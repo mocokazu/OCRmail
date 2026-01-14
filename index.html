@@ -52,7 +52,8 @@
             object-fit: cover;
         }
 
-        #canvas {
+        #canvas,
+        #processCanvas {
             display: none;
         }
 
@@ -62,18 +63,19 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 80%;
-            height: 60px;
+            width: 85%;
+            height: 80px;
             border: 3px solid #00ff00;
             border-radius: 8px;
             pointer-events: none;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
         }
 
         .guide-text {
             position: absolute;
             top: 50%;
             left: 50%;
-            transform: translate(-50%, calc(-50% - 50px));
+            transform: translate(-50%, calc(-50% - 60px));
             color: #00ff00;
             font-size: 0.9rem;
             text-shadow: 0 0 5px black;
@@ -217,6 +219,46 @@
             font-size: 1.2rem;
             font-weight: bold;
         }
+
+        /* エラーメッセージ */
+        .error-toast {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(220, 53, 69, 0.95);
+            color: white;
+            padding: 1.5rem 2rem;
+            border-radius: 12px;
+            z-index: 3000;
+            text-align: center;
+            max-width: 90%;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .error-toast.d-none {
+            display: none !important;
+        }
+
+        /* 成功メッセージ */
+        .success-toast {
+            position: fixed;
+            top: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(25, 135, 84, 0.95);
+            color: white;
+            padding: 1rem 2rem;
+            border-radius: 12px;
+            z-index: 3000;
+            font-size: 1.2rem;
+            font-weight: bold;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .success-toast.d-none {
+            display: none !important;
+        }
     </style>
 </head>
 
@@ -228,6 +270,15 @@
         <div id="loadingText">読み取り中...</div>
     </div>
 
+    <!-- エラートースト -->
+    <div class="error-toast d-none" id="errorToast">
+        <div id="errorText"></div>
+        <button class="btn btn-light btn-sm mt-2" onclick="hideError()">閉じる</button>
+    </div>
+
+    <!-- 成功トースト -->
+    <div class="success-toast d-none" id="successToast"></div>
+
     <div class="header">
         現場スキャンWeb
     </div>
@@ -236,10 +287,11 @@
     <div id="cameraContainer">
         <video id="video" autoplay playsinline muted></video>
         <div class="guide-frame"></div>
-        <div class="guide-text">ここに文字を合わせてください</div>
+        <div class="guide-text">枠内に文字を合わせてください</div>
         <div class="counter-badge"><span id="scanCount">0</span> 件</div>
     </div>
     <canvas id="canvas"></canvas>
+    <canvas id="processCanvas"></canvas>
 
     <!-- リスト＆設定エリア -->
     <div class="list-section">
@@ -304,23 +356,37 @@
         let preventDuplicate = true;
         let stream = null;
         let isReady = false;
+        let isProcessing = false;
 
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
+        const processCanvas = document.getElementById('processCanvas');
+        const processCtx = processCanvas.getContext('2d');
 
         // 音声フィードバック用 (Web Audio API)
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let audioCtx = null;
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
         function playBeep() {
-            const oscillator = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
-            oscillator.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-            oscillator.type = "sine";
-            oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
-            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            oscillator.start();
-            oscillator.stop(audioCtx.currentTime + 0.1);
+            try {
+                if (!audioCtx) initAudio();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                oscillator.type = "sine";
+                oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.1);
+            } catch (e) {
+                console.warn("Audio playback failed:", e);
+            }
         }
 
         // --- UI要素 ---
@@ -330,14 +396,45 @@
         const preventDuplicateCheckbox = document.getElementById('preventDuplicate');
         const loadingOverlay = document.getElementById('loadingOverlay');
         const loadingText = document.getElementById('loadingText');
+        const errorToast = document.getElementById('errorToast');
+        const errorText = document.getElementById('errorText');
+        const successToast = document.getElementById('successToast');
+
+        // --- エラーハンドリング ---
+        function showError(message) {
+            errorText.textContent = message;
+            errorToast.classList.remove('d-none');
+        }
+
+        function hideError() {
+            errorToast.classList.add('d-none');
+        }
+
+        function showSuccess(message) {
+            successToast.textContent = message;
+            successToast.classList.remove('d-none');
+            setTimeout(() => {
+                successToast.classList.add('d-none');
+            }, 1500);
+        }
 
         // --- カメラ自動起動 ---
         async function startCamera() {
             try {
-                if (audioCtx.state === 'suspended') audioCtx.resume();
+                initAudio();
+
+                // カメラの利用可能性チェック
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    showError("お使いのブラウザはカメラ機能に対応していません。\nSafariまたはChromeをお試しください。");
+                    return;
+                }
 
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'environment' }
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
                 });
 
                 video.srcObject = stream;
@@ -346,13 +443,72 @@
                     shutterBtn.disabled = false;
                 };
             } catch (err) {
-                alert("カメラの起動に失敗しました。\nエラー: " + err.message + "\nHTTPS接続と権限を確認してください。");
+                let message = "カメラの起動に失敗しました。\n";
+
+                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                    message += "カメラへのアクセスが拒否されました。\n設定 → Safari → カメラ で許可してください。";
+                } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+                    message += "カメラが見つかりません。";
+                } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+                    message += "カメラが他のアプリで使用中です。";
+                } else if (err.name === 'OverconstrainedError') {
+                    message += "カメラの設定に問題があります。";
+                } else if (err.name === 'TypeError') {
+                    message += "HTTPS接続が必要です。";
+                } else {
+                    message += err.message;
+                }
+
+                showError(message);
             }
+        }
+
+        // --- 画像前処理（OCR精度向上） ---
+        function preprocessImage(sourceCanvas) {
+            const sw = sourceCanvas.width;
+            const sh = sourceCanvas.height;
+
+            // ガイド枠に相当する中央部分をクロップ（85%幅、中央80px高さ相当）
+            const cropWidth = Math.floor(sw * 0.85);
+            const cropHeight = Math.floor(sh * 0.25); // 画面の25%
+            const cropX = Math.floor((sw - cropWidth) / 2);
+            const cropY = Math.floor((sh - cropHeight) / 2);
+
+            processCanvas.width = cropWidth;
+            processCanvas.height = cropHeight;
+
+            // クロップした領域を描画
+            processCtx.drawImage(sourceCanvas, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+
+            // 画像データを取得
+            const imageData = processCtx.getImageData(0, 0, cropWidth, cropHeight);
+            const data = imageData.data;
+
+            // グレースケール化 + コントラスト強調 + 二値化
+            for (let i = 0; i < data.length; i += 4) {
+                // グレースケール
+                const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+
+                // コントラスト強調（係数1.5）
+                let enhanced = ((gray - 128) * 1.5) + 128;
+                enhanced = Math.max(0, Math.min(255, enhanced));
+
+                // 二値化（閾値128）- 文字を黒、背景を白に
+                const binary = enhanced < 128 ? 0 : 255;
+
+                data[i] = binary;
+                data[i + 1] = binary;
+                data[i + 2] = binary;
+            }
+
+            processCtx.putImageData(imageData, 0, 0);
+            return processCanvas;
         }
 
         // --- 撮影＆OCR処理 ---
         async function captureAndRecognize() {
-            if (!isReady) return;
+            if (!isReady || isProcessing) return;
+            isProcessing = true;
 
             // カメラ映像をキャンバスに描画
             canvas.width = video.videoWidth;
@@ -361,13 +517,17 @@
 
             // ローディング表示
             loadingOverlay.classList.remove('d-none');
-            loadingText.textContent = 'OCR処理中...';
+            loadingText.textContent = '画像を処理中...';
             shutterBtn.disabled = true;
 
             try {
-                // Tesseractで英数字認識
+                // 画像前処理
+                const processedCanvas = preprocessImage(canvas);
+                loadingText.textContent = 'OCR処理中...';
+
+                // Tesseractで英数字認識（最適化設定）
                 const result = await Tesseract.recognize(
-                    canvas,
+                    processedCanvas,
                     'eng',
                     {
                         logger: m => {
@@ -378,59 +538,96 @@
                     }
                 );
 
+                // 信頼度チェック
+                const confidence = result.data.confidence || 0;
+
                 // 英数字のみを抽出（スペース・改行除去）
-                const alphanumeric = result.data.text.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+                let alphanumeric = result.data.text.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+
+                // よくある誤認識を修正
+                alphanumeric = alphanumeric
+                    .replace(/O/g, '0')  // O→0（数字が多い現場を想定）
+                    .replace(/I/g, '1')  // I→1
+                    .replace(/S/g, '5')  // S→5
+                    .replace(/B/g, '8')  // B→8
+                    .replace(/G/g, '6'); // G→6
 
                 if (alphanumeric.length > 0) {
+                    if (confidence < 50) {
+                        // 信頼度が低い場合は警告
+                        showSuccess(`読取: ${alphanumeric} (確度低)`);
+                    } else {
+                        showSuccess(`読取: ${alphanumeric}`);
+                    }
                     addScanResult(alphanumeric);
                 } else {
-                    alert("文字が認識できませんでした。\n明るい場所で、カメラを文字に近づけて再度お試しください。");
+                    showError("文字を認識できませんでした。\n\n【ヒント】\n・枠内に文字を大きく入れる\n・明るい場所で撮影\n・カメラを水平にする");
                 }
             } catch (err) {
-                alert("OCR処理中にエラーが発生しました。");
-                console.error(err);
+                console.error("OCR Error:", err);
+
+                let message = "OCR処理中にエラーが発生しました。\n";
+                if (err.message && err.message.includes('network')) {
+                    message += "インターネット接続を確認してください。";
+                } else {
+                    message += "再度お試しください。";
+                }
+                showError(message);
             } finally {
                 loadingOverlay.classList.add('d-none');
                 shutterBtn.disabled = false;
+                isProcessing = false;
             }
         }
 
         // --- データ保存 (localStorage) ---
         function saveToLocal() {
-            localStorage.setItem('fieldScan_results', JSON.stringify(scanResults));
+            try {
+                localStorage.setItem('fieldScan_results', JSON.stringify(scanResults));
+            } catch (e) {
+                console.warn("LocalStorage save failed:", e);
+            }
         }
 
         function loadFromLocal() {
-            const savedResults = localStorage.getItem('fieldScan_results');
-            if (savedResults) {
-                scanResults = JSON.parse(savedResults);
-                updateUI();
-            }
-            const emailTo = localStorage.getItem('fieldScan_emailTo');
-            const emailSubject = localStorage.getItem('fieldScan_emailSubject');
-            const savedPreventDuplicate = localStorage.getItem('fieldScan_preventDuplicate');
+            try {
+                const savedResults = localStorage.getItem('fieldScan_results');
+                if (savedResults) {
+                    scanResults = JSON.parse(savedResults);
+                    updateUI();
+                }
+                const emailTo = localStorage.getItem('fieldScan_emailTo');
+                const emailSubject = localStorage.getItem('fieldScan_emailSubject');
+                const savedPreventDuplicate = localStorage.getItem('fieldScan_preventDuplicate');
 
-            if (emailTo) document.getElementById('emailTo').value = emailTo;
-            if (emailSubject) document.getElementById('emailSubject').value = emailSubject;
-            if (savedPreventDuplicate !== null) {
-                preventDuplicate = savedPreventDuplicate === 'true';
-                preventDuplicateCheckbox.checked = preventDuplicate;
+                if (emailTo) document.getElementById('emailTo').value = emailTo;
+                if (emailSubject) document.getElementById('emailSubject').value = emailSubject;
+                if (savedPreventDuplicate !== null) {
+                    preventDuplicate = savedPreventDuplicate === 'true';
+                    preventDuplicateCheckbox.checked = preventDuplicate;
+                }
+            } catch (e) {
+                console.warn("LocalStorage load failed:", e);
             }
         }
 
         function saveSettings() {
-            localStorage.setItem('fieldScan_emailTo', document.getElementById('emailTo').value);
-            localStorage.setItem('fieldScan_emailSubject', document.getElementById('emailSubject').value);
-            preventDuplicate = preventDuplicateCheckbox.checked;
-            localStorage.setItem('fieldScan_preventDuplicate', preventDuplicate);
-            alert("設定を保存しました。");
-            const settingsCollapse = document.getElementById('collapseSettings');
-            bootstrap.Collapse.getInstance(settingsCollapse)?.hide();
+            try {
+                localStorage.setItem('fieldScan_emailTo', document.getElementById('emailTo').value);
+                localStorage.setItem('fieldScan_emailSubject', document.getElementById('emailSubject').value);
+                preventDuplicate = preventDuplicateCheckbox.checked;
+                localStorage.setItem('fieldScan_preventDuplicate', preventDuplicate);
+                showSuccess("設定を保存しました");
+                const settingsCollapse = document.getElementById('collapseSettings');
+                bootstrap.Collapse.getInstance(settingsCollapse)?.hide();
+            } catch (e) {
+                showError("設定の保存に失敗しました");
+            }
         }
 
         function addScanResult(code) {
             if (preventDuplicate && scanResults.includes(code)) {
-                alert("この番号は既にリストにあります: " + code);
+                showError("この番号は既にリストにあります:\n" + code);
                 return;
             }
             playBeep();
@@ -472,11 +669,11 @@
             const to = document.getElementById('emailTo').value;
             const subject = document.getElementById('emailSubject').value;
             if (!to) {
-                alert("設定画面で送信先メールアドレスを入力してください。");
+                showError("設定画面で送信先メールアドレスを入力してください。");
                 return;
             }
             if (scanResults.length === 0) {
-                alert("送信するデータがありません。");
+                showError("送信するデータがありません。");
                 return;
             }
             const body = scanResults.join('\n');
@@ -490,10 +687,16 @@
         document.getElementById('saveSettings').addEventListener('click', saveSettings);
         document.getElementById('sendEmail').addEventListener('click', sendEmail);
 
+        // グローバルエラーハンドラ
+        window.onerror = function (msg, url, line) {
+            console.error(`Error: ${msg} at ${line}`);
+            return false;
+        };
+
         // 初期化
         window.addEventListener('load', () => {
             loadFromLocal();
-            startCamera(); // 自動でカメラ起動
+            startCamera();
         });
 
         // --- PWA Service Worker 登録 ---
