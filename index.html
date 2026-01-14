@@ -59,8 +59,8 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 85%;
-            height: 25%;
+            width: 80%;
+            height: 15%;
             border: 3px solid #00ff00;
             border-radius: 8px;
             pointer-events: none;
@@ -454,8 +454,9 @@
 
         function preprocessImage(src) {
             const sw = src.width, sh = src.height;
-            const cropW = Math.floor(sw * 0.85);
-            const cropH = Math.floor(sh * 0.25);
+            // ガイド枠と同じ比率（80%幅、15%高さ）で厳密にクロップ
+            const cropW = Math.floor(sw * 0.80);
+            const cropH = Math.floor(sh * 0.15);
             const cropX = Math.floor((sw - cropW) / 2);
             const cropY = Math.floor((sh - cropH) / 2);
 
