@@ -37,7 +37,6 @@
             font-size: 1rem;
         }
 
-        /* カメラエリア - 画面いっぱいに */
         #cameraContainer {
             position: relative;
             width: 100%;
@@ -57,7 +56,6 @@
             display: none;
         }
 
-        /* 読み取りガイド枠 */
         .guide-frame {
             position: absolute;
             top: 50%;
@@ -81,7 +79,6 @@
             text-shadow: 0 0 5px black;
         }
 
-        /* リスト表示 */
         .list-section {
             padding: 1rem;
         }
@@ -119,7 +116,6 @@
             font-weight: 600;
         }
 
-        /* メール送信ボタン（リスト下） */
         .btn-send {
             height: 60px;
             font-size: 1.3rem;
@@ -128,7 +124,6 @@
             margin-bottom: 1rem;
         }
 
-        /* シャッターボタン（フッター） */
         .shutter-bar {
             position: fixed;
             bottom: 0;
@@ -163,7 +158,6 @@
             border-color: #888;
         }
 
-        /* ローディング */
         .loading-overlay {
             position: fixed;
             top: 0;
@@ -188,7 +182,6 @@
             height: 3rem;
         }
 
-        /* 設定アコーディオン */
         .accordion-button {
             background-color: #333;
             color: white;
@@ -207,7 +200,6 @@
             color: white;
         }
 
-        /* カウンター */
         .counter-badge {
             position: absolute;
             top: 10px;
@@ -220,7 +212,6 @@
             font-weight: bold;
         }
 
-        /* エラーメッセージ */
         .error-toast {
             position: fixed;
             top: 50%;
@@ -240,7 +231,6 @@
             display: none !important;
         }
 
-        /* 成功メッセージ */
         .success-toast {
             position: fixed;
             top: 20%;
@@ -258,6 +248,42 @@
 
         .success-toast.d-none {
             display: none !important;
+        }
+
+        .confirm-dialog {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 4000;
+        }
+
+        .confirm-dialog.d-none {
+            display: none !important;
+        }
+
+        .confirm-content {
+            background: #333;
+            padding: 2rem;
+            border-radius: 12px;
+            text-align: center;
+            max-width: 80%;
+        }
+
+        .confirm-buttons {
+            margin-top: 1.5rem;
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+        }
+
+        .confirm-buttons .btn {
+            min-width: 100px;
         }
     </style>
 </head>
@@ -278,6 +304,17 @@
 
     <!-- 成功トースト -->
     <div class="success-toast d-none" id="successToast"></div>
+
+    <!-- 確認ダイアログ -->
+    <div class="confirm-dialog d-none" id="confirmDialog">
+        <div class="confirm-content">
+            <div id="confirmText"></div>
+            <div class="confirm-buttons">
+                <button class="btn btn-secondary" id="confirmCancel">キャンセル</button>
+                <button class="btn btn-danger" id="confirmOk">削除</button>
+            </div>
+        </div>
+    </div>
 
     <div class="header">
         現場スキャンWeb
@@ -357,6 +394,7 @@
         let stream = null;
         let isReady = false;
         let isProcessing = false;
+        let confirmCallback = null;
 
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
@@ -399,8 +437,10 @@
         const errorToast = document.getElementById('errorToast');
         const errorText = document.getElementById('errorText');
         const successToast = document.getElementById('successToast');
+        const confirmDialog = document.getElementById('confirmDialog');
+        const confirmText = document.getElementById('confirmText');
 
-        // --- エラーハンドリング ---
+        // --- ダイアログ関数 ---
         function showError(message) {
             errorText.textContent = message;
             errorToast.classList.remove('d-none');
@@ -418,12 +458,29 @@
             }, 1500);
         }
 
+        function showConfirmDialog(message, onConfirm) {
+            confirmText.textContent = message;
+            confirmCallback = onConfirm;
+            confirmDialog.classList.remove('d-none');
+        }
+
+        function hideConfirmDialog() {
+            confirmDialog.classList.add('d-none');
+            confirmCallback = null;
+        }
+
+        document.getElementById('confirmOk').addEventListener('click', () => {
+            if (confirmCallback) confirmCallback();
+            hideConfirmDialog();
+        });
+
+        document.getElementById('confirmCancel').addEventListener('click', hideConfirmDialog);
+
         // --- カメラ自動起動 ---
         async function startCamera() {
             try {
                 initAudio();
 
-                // カメラの利用可能性チェック
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                     showError("お使いのブラウザはカメラ機能に対応していません。\nSafariまたはChromeをお試しください。");
                     return;
@@ -468,34 +525,24 @@
             const sw = sourceCanvas.width;
             const sh = sourceCanvas.height;
 
-            // ガイド枠に相当する中央部分をクロップ（85%幅、中央80px高さ相当）
             const cropWidth = Math.floor(sw * 0.85);
-            const cropHeight = Math.floor(sh * 0.25); // 画面の25%
+            const cropHeight = Math.floor(sh * 0.25);
             const cropX = Math.floor((sw - cropWidth) / 2);
             const cropY = Math.floor((sh - cropHeight) / 2);
 
             processCanvas.width = cropWidth;
             processCanvas.height = cropHeight;
 
-            // クロップした領域を描画
             processCtx.drawImage(sourceCanvas, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
 
-            // 画像データを取得
             const imageData = processCtx.getImageData(0, 0, cropWidth, cropHeight);
             const data = imageData.data;
 
-            // グレースケール化 + コントラスト強調 + 二値化
             for (let i = 0; i < data.length; i += 4) {
-                // グレースケール
                 const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-
-                // コントラスト強調（係数1.5）
                 let enhanced = ((gray - 128) * 1.5) + 128;
                 enhanced = Math.max(0, Math.min(255, enhanced));
-
-                // 二値化（閾値128）- 文字を黒、背景を白に
                 const binary = enhanced < 128 ? 0 : 255;
-
                 data[i] = binary;
                 data[i + 1] = binary;
                 data[i + 2] = binary;
@@ -510,22 +557,18 @@
             if (!isReady || isProcessing) return;
             isProcessing = true;
 
-            // カメラ映像をキャンバスに描画
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             ctx.drawImage(video, 0, 0);
 
-            // ローディング表示
             loadingOverlay.classList.remove('d-none');
             loadingText.textContent = '画像を処理中...';
             shutterBtn.disabled = true;
 
             try {
-                // 画像前処理
                 const processedCanvas = preprocessImage(canvas);
                 loadingText.textContent = 'OCR処理中...';
 
-                // Tesseractで英数字認識（最適化設定）
                 const result = await Tesseract.recognize(
                     processedCanvas,
                     'eng',
@@ -538,23 +581,13 @@
                     }
                 );
 
-                // 信頼度チェック
                 const confidence = result.data.confidence || 0;
 
-                // 英数字のみを抽出（スペース・改行除去）
+                // 英数字のみを抽出（自動変換は行わない）
                 let alphanumeric = result.data.text.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-
-                // よくある誤認識を修正
-                alphanumeric = alphanumeric
-                    .replace(/O/g, '0')  // O→0（数字が多い現場を想定）
-                    .replace(/I/g, '1')  // I→1
-                    .replace(/S/g, '5')  // S→5
-                    .replace(/B/g, '8')  // B→8
-                    .replace(/G/g, '6'); // G→6
 
                 if (alphanumeric.length > 0) {
                     if (confidence < 50) {
-                        // 信頼度が低い場合は警告
                         showSuccess(`読取: ${alphanumeric} (確度低)`);
                     } else {
                         showSuccess(`読取: ${alphanumeric}`);
@@ -565,7 +598,6 @@
                 }
             } catch (err) {
                 console.error("OCR Error:", err);
-
                 let message = "OCR処理中にエラーが発生しました。\n";
                 if (err.message && err.message.includes('network')) {
                     message += "インターネット接続を確認してください。";
@@ -643,11 +675,12 @@
         }
 
         function clearAll() {
-            if (confirm("リストをすべて削除しますか？")) {
+            showConfirmDialog("リストをすべて削除しますか？", () => {
                 scanResults = [];
                 saveToLocal();
                 updateUI();
-            }
+                showSuccess("リストを削除しました");
+            });
         }
 
         function updateUI() {
@@ -687,7 +720,6 @@
         document.getElementById('saveSettings').addEventListener('click', saveSettings);
         document.getElementById('sendEmail').addEventListener('click', sendEmail);
 
-        // グローバルエラーハンドラ
         window.onerror = function (msg, url, line) {
             console.error(`Error: ${msg} at ${line}`);
             return false;
