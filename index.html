@@ -283,6 +283,25 @@
         .confirm-buttons .btn {
             min-width: 100px;
         }
+
+        /* デバッグ表示用 */
+        .debug-section {
+            padding: 1rem;
+            background: #111;
+            border-top: 1px solid #333;
+        }
+
+        .debug-section h6 {
+            color: #ff0;
+            margin-bottom: 0.5rem;
+        }
+
+        #debugCanvas {
+            width: 100%;
+            max-height: 150px;
+            border: 2px solid #ff0;
+            border-radius: 8px;
+        }
     </style>
 </head>
 
@@ -313,12 +332,19 @@
 
     <div id="cameraContainer">
         <video id="video" autoplay playsinline muted></video>
-        <div class="guide-frame"></div>
+        <div class="guide-frame" id="guideFrame"></div>
         <div class="guide-text">枠内に文字を合わせてください</div>
         <div class="counter-badge"><span id="scanCount">0</span> 件</div>
     </div>
     <canvas id="canvas"></canvas>
     <canvas id="processCanvas"></canvas>
+
+    <!-- デバッグ表示エリア -->
+    <div class="debug-section">
+        <h6>📷 OCR処理画像（デバッグ用）</h6>
+        <canvas id="debugCanvas"></canvas>
+        <div id="debugInfo" style="color: #888; font-size: 0.8rem; margin-top: 0.5rem;"></div>
+    </div>
 
     <div class="list-section">
         <div class="accordion mb-3" id="settingsAccordion">
@@ -381,6 +407,11 @@
         const ctx = canvas.getContext('2d');
         const processCanvas = document.getElementById('processCanvas');
         const processCtx = processCanvas.getContext('2d');
+        const debugCanvas = document.getElementById('debugCanvas');
+        const debugCtx = debugCanvas.getContext('2d');
+        const debugInfo = document.getElementById('debugInfo');
+        const guideFrame = document.getElementById('guideFrame');
+        const cameraContainer = document.getElementById('cameraContainer');
 
         let audioCtx = null;
         function initAudio() {
@@ -452,28 +483,96 @@
             }
         }
 
+        // object-fit: cover を考慮した正確なクロップ座標を計算
+        function calculateCropRegion() {
+            const containerW = cameraContainer.clientWidth;
+            const containerH = cameraContainer.clientHeight;
+            const videoW = video.videoWidth;
+            const videoH = video.videoHeight;
+
+            // object-fit: cover の場合、ビデオはコンテナを覆うように拡大される
+            const containerRatio = containerW / containerH;
+            const videoRatio = videoW / videoH;
+
+            let visibleW, visibleH, offsetX, offsetY;
+
+            if (videoRatio > containerRatio) {
+                // ビデオが横長 → 左右がカットされる
+                visibleH = videoH;
+                visibleW = containerRatio * videoH;
+                offsetX = (videoW - visibleW) / 2;
+                offsetY = 0;
+            } else {
+                // ビデオが縦長 → 上下がカットされる
+                visibleW = videoW;
+                visibleH = videoW / containerRatio;
+                offsetX = 0;
+                offsetY = (videoH - visibleH) / 2;
+            }
+
+            // ガイド枠の位置（コンテナ内での相対位置）
+            const guideRect = guideFrame.getBoundingClientRect();
+            const containerRect = cameraContainer.getBoundingClientRect();
+
+            const guideRelX = (guideRect.left - containerRect.left) / containerW;
+            const guideRelY = (guideRect.top - containerRect.top) / containerH;
+            const guideRelW = guideRect.width / containerW;
+            const guideRelH = guideRect.height / containerH;
+
+            // ビデオ座標に変換
+            const cropX = offsetX + guideRelX * visibleW;
+            const cropY = offsetY + guideRelY * visibleH;
+            const cropW = guideRelW * visibleW;
+            const cropH = guideRelH * visibleH;
+
+            return {
+                x: Math.floor(cropX),
+                y: Math.floor(cropY),
+                w: Math.floor(cropW),
+                h: Math.floor(cropH)
+            };
+        }
+
         function preprocessImage(src) {
-            const sw = src.width, sh = src.height;
-            // ガイド枠と同じ比率（80%幅、15%高さ）で厳密にクロップ
-            const cropW = Math.floor(sw * 0.80);
-            const cropH = Math.floor(sh * 0.15);
-            const cropX = Math.floor((sw - cropW) / 2);
-            const cropY = Math.floor((sh - cropH) / 2);
+            // 正確なクロップ領域を計算
+            const crop = calculateCropRegion();
 
-            processCanvas.width = cropW;
-            processCanvas.height = cropH;
-            processCtx.drawImage(src, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+            // OCRに最適なサイズにリサイズ（幅1200px程度）
+            const targetWidth = 1200;
+            const scale = targetWidth / crop.w;
+            const targetHeight = Math.floor(crop.h * scale);
 
-            const imgData = processCtx.getImageData(0, 0, cropW, cropH);
+            processCanvas.width = targetWidth;
+            processCanvas.height = targetHeight;
+
+            // クロップ＆リサイズ
+            processCtx.drawImage(src, crop.x, crop.y, crop.w, crop.h, 0, 0, targetWidth, targetHeight);
+
+            // 画像処理（グレースケール → コントラスト強調 → 二値化）
+            const imgData = processCtx.getImageData(0, 0, targetWidth, targetHeight);
             const d = imgData.data;
+
+            // 平均輝度を計算して適応的二値化
+            let sum = 0;
+            for (let i = 0; i < d.length; i += 4) {
+                sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+            }
+            const avgBrightness = sum / (d.length / 4);
+            const threshold = avgBrightness * 0.8; // 平均より少し暗い部分を文字と判定
+
             for (let i = 0; i < d.length; i += 4) {
                 const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-                let enh = ((gray - 128) * 1.5) + 128;
-                enh = Math.max(0, Math.min(255, enh));
-                const bin = enh < 128 ? 0 : 255;
+                const bin = gray < threshold ? 0 : 255;
                 d[i] = d[i + 1] = d[i + 2] = bin;
             }
             processCtx.putImageData(imgData, 0, 0);
+
+            // デバッグ表示を更新
+            debugCanvas.width = processCanvas.width;
+            debugCanvas.height = processCanvas.height;
+            debugCtx.drawImage(processCanvas, 0, 0);
+            debugInfo.textContent = `クロップ: (${crop.x}, ${crop.y}) ${crop.w}x${crop.h} → リサイズ: ${targetWidth}x${targetHeight}`;
+
             return processCanvas;
         }
 
