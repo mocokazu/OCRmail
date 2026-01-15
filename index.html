@@ -15,7 +15,7 @@
             --primary-color: #0d6efd;
             --bg-color: #1a1a1a;
             --text-color: #f8f9fa;
-            --shutter-size: 80px;
+            --shutter-size: 70px;
         }
 
         body {
@@ -38,7 +38,7 @@
         #cameraContainer {
             position: relative;
             width: 100%;
-            height: 60vh;
+            height: 55vh;
             background: black;
             overflow: hidden;
         }
@@ -132,6 +132,7 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            gap: 2rem;
             z-index: 1000;
         }
 
@@ -154,6 +155,24 @@
         .shutter-btn:disabled {
             background: #666;
             border-color: #888;
+        }
+
+        .rotate-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #444;
+            border: 2px solid #666;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .rotate-btn:active {
+            background: #555;
         }
 
         .loading-overlay {
@@ -207,6 +226,18 @@
             padding: 0.5rem 1rem;
             border-radius: 20px;
             font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .rotation-badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 165, 0, 0.9);
+            color: white;
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
             font-weight: bold;
         }
 
@@ -297,9 +328,17 @@
 
         #debugCanvas {
             width: 100%;
-            max-height: 150px;
+            max-height: 120px;
             border: 2px solid #ff0;
             border-radius: 8px;
+            object-fit: contain;
+        }
+
+        .debug-info {
+            color: #888;
+            font-size: 0.75rem;
+            margin-top: 0.5rem;
+            word-break: break-all;
         }
     </style>
 </head>
@@ -334,14 +373,15 @@
         <div class="guide-frame" id="guideFrame"></div>
         <div class="guide-text">枠内に文字を合わせてください</div>
         <div class="counter-badge"><span id="scanCount">0</span> 件</div>
+        <div class="rotation-badge" id="rotationBadge">回転: 0°</div>
     </div>
     <canvas id="canvas"></canvas>
     <canvas id="processCanvas"></canvas>
 
     <div class="debug-section">
-        <h6>📷 OCR処理画像（デバッグ用）</h6>
+        <h6>📷 OCR処理画像（デバッグ用）<span id="debugRotation"></span></h6>
         <canvas id="debugCanvas"></canvas>
-        <div id="debugInfo" style="color: #888; font-size: 0.8rem; margin-top: 0.5rem;"></div>
+        <div class="debug-info" id="debugInfo"></div>
     </div>
 
     <div class="list-section">
@@ -386,7 +426,9 @@
     </div>
 
     <div class="shutter-bar">
+        <button class="rotate-btn" id="rotateBtn" title="画像を回転">🔄</button>
         <button class="shutter-btn" id="shutterBtn" disabled></button>
+        <button class="rotate-btn" id="rotateBtnCCW" title="逆回転">↺</button>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -399,6 +441,7 @@
         let isReady = false;
         let isProcessing = false;
         let confirmCallback = null;
+        let rotationAngle = 0; // 0, 90, 180, 270
 
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
@@ -408,8 +451,10 @@
         const debugCanvas = document.getElementById('debugCanvas');
         const debugCtx = debugCanvas.getContext('2d');
         const debugInfo = document.getElementById('debugInfo');
+        const debugRotation = document.getElementById('debugRotation');
         const guideFrame = document.getElementById('guideFrame');
         const cameraContainer = document.getElementById('cameraContainer');
+        const rotationBadge = document.getElementById('rotationBadge');
 
         let audioCtx = null;
         function initAudio() {
@@ -432,6 +477,8 @@
         }
 
         const shutterBtn = document.getElementById('shutterBtn');
+        const rotateBtn = document.getElementById('rotateBtn');
+        const rotateBtnCCW = document.getElementById('rotateBtnCCW');
         const scanList = document.getElementById('scanList');
         const scanCount = document.getElementById('scanCount');
         const preventDuplicateCheckbox = document.getElementById('preventDuplicate');
@@ -459,6 +506,24 @@
 
         document.getElementById('confirmOk').addEventListener('click', () => { if (confirmCallback) confirmCallback(); hideConfirmDialog(); });
         document.getElementById('confirmCancel').addEventListener('click', hideConfirmDialog);
+
+        // 回転ボタン
+        rotateBtn.addEventListener('click', () => {
+            rotationAngle = (rotationAngle + 90) % 360;
+            updateRotationDisplay();
+            localStorage.setItem('fieldScan_rotation', rotationAngle);
+        });
+
+        rotateBtnCCW.addEventListener('click', () => {
+            rotationAngle = (rotationAngle - 90 + 360) % 360;
+            updateRotationDisplay();
+            localStorage.setItem('fieldScan_rotation', rotationAngle);
+        });
+
+        function updateRotationDisplay() {
+            rotationBadge.textContent = `回転: ${rotationAngle}°`;
+            debugRotation.textContent = ` (${rotationAngle}°)`;
+        }
 
         async function startCamera() {
             try {
@@ -527,18 +592,78 @@
 
         function preprocessImage(src) {
             const crop = calculateCropRegion();
+            const srcW = src.width;
+            const srcH = src.height;
 
+            // 回転を考慮してクロップ
+            let actualCrop = { ...crop };
+
+            // 回転角度に応じてクロップ座標を変換
+            if (rotationAngle === 90) {
+                actualCrop = {
+                    x: crop.y,
+                    y: srcH - crop.x - crop.w,
+                    w: crop.h,
+                    h: crop.w
+                };
+            } else if (rotationAngle === 180) {
+                actualCrop = {
+                    x: srcW - crop.x - crop.w,
+                    y: srcH - crop.y - crop.h,
+                    w: crop.w,
+                    h: crop.h
+                };
+            } else if (rotationAngle === 270) {
+                actualCrop = {
+                    x: srcW - crop.y - crop.h,
+                    y: crop.x,
+                    w: crop.h,
+                    h: crop.w
+                };
+            }
+
+            // 境界チェック
+            actualCrop.x = Math.max(0, Math.min(actualCrop.x, srcW - 1));
+            actualCrop.y = Math.max(0, Math.min(actualCrop.y, srcH - 1));
+            actualCrop.w = Math.min(actualCrop.w, srcW - actualCrop.x);
+            actualCrop.h = Math.min(actualCrop.h, srcH - actualCrop.y);
+
+            // OCRに最適なサイズ
             const targetWidth = 1200;
-            const scale = targetWidth / crop.w;
-            const targetHeight = Math.floor(crop.h * scale);
+            const scale = targetWidth / actualCrop.w;
+            const targetHeight = Math.floor(actualCrop.h * scale);
 
             processCanvas.width = targetWidth;
             processCanvas.height = targetHeight;
 
-            processCtx.drawImage(src, crop.x, crop.y, crop.w, crop.h, 0, 0, targetWidth, targetHeight);
+            // 回転を適用してクロップ
+            processCtx.save();
 
-            // グレースケール化のみ（二値化なし）
-            const imgData = processCtx.getImageData(0, 0, targetWidth, targetHeight);
+            if (rotationAngle !== 0) {
+                // 一時的なキャンバスでクロップ
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = actualCrop.w;
+                tempCanvas.height = actualCrop.h;
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.drawImage(src, actualCrop.x, actualCrop.y, actualCrop.w, actualCrop.h, 0, 0, actualCrop.w, actualCrop.h);
+
+                // 回転してからリサイズ
+                if (rotationAngle === 90 || rotationAngle === 270) {
+                    processCanvas.width = targetHeight;
+                    processCanvas.height = targetWidth;
+                }
+
+                processCtx.translate(processCanvas.width / 2, processCanvas.height / 2);
+                processCtx.rotate(rotationAngle * Math.PI / 180);
+                processCtx.drawImage(tempCanvas, -actualCrop.w * scale / 2, -actualCrop.h * scale / 2, actualCrop.w * scale, actualCrop.h * scale);
+            } else {
+                processCtx.drawImage(src, actualCrop.x, actualCrop.y, actualCrop.w, actualCrop.h, 0, 0, targetWidth, targetHeight);
+            }
+
+            processCtx.restore();
+
+            // グレースケール化
+            const imgData = processCtx.getImageData(0, 0, processCanvas.width, processCanvas.height);
             const d = imgData.data;
 
             for (let i = 0; i < d.length; i += 4) {
@@ -547,10 +672,11 @@
             }
             processCtx.putImageData(imgData, 0, 0);
 
+            // デバッグ表示
             debugCanvas.width = processCanvas.width;
             debugCanvas.height = processCanvas.height;
             debugCtx.drawImage(processCanvas, 0, 0);
-            debugInfo.textContent = `クロップ: (${crop.x}, ${crop.y}) ${crop.w}x${crop.h} → リサイズ: ${targetWidth}x${targetHeight}`;
+            debugInfo.textContent = `元画像: ${srcW}x${srcH} | クロップ: (${actualCrop.x}, ${actualCrop.y}) ${actualCrop.w}x${actualCrop.h} | 出力: ${processCanvas.width}x${processCanvas.height} | 回転: ${rotationAngle}°`;
 
             return processCanvas;
         }
@@ -586,7 +712,7 @@
                     showSuccess(confidence < 50 ? `読取: ${text} (確度低)` : `読取: ${text}`);
                     addScanResult(text);
                 } else {
-                    showError("認識できませんでした。\n枠内に大きく文字を入れてください。");
+                    showError("認識できませんでした。\n回転ボタンで向きを調整してください。");
                 }
             } catch (err) {
                 console.error("OCR Error:", err);
@@ -609,11 +735,16 @@
                 const emailTo = localStorage.getItem('fieldScan_emailTo');
                 const emailSubject = localStorage.getItem('fieldScan_emailSubject');
                 const savedPrev = localStorage.getItem('fieldScan_preventDuplicate');
+                const savedRotation = localStorage.getItem('fieldScan_rotation');
                 if (emailTo) document.getElementById('emailTo').value = emailTo;
                 if (emailSubject) document.getElementById('emailSubject').value = emailSubject;
                 if (savedPrev !== null) {
                     preventDuplicate = savedPrev === 'true';
                     preventDuplicateCheckbox.checked = preventDuplicate;
+                }
+                if (savedRotation !== null) {
+                    rotationAngle = parseInt(savedRotation) || 0;
+                    updateRotationDisplay();
                 }
             } catch (e) { }
         }
