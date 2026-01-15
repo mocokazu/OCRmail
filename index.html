@@ -590,45 +590,45 @@
             };
         }
 
+        // 鮮明度スコアを計算（ラプラシアンフィルタの簡易版）
+        function calculateSharpness(ctx, width, height) {
+            const imgData = ctx.getImageData(0, 0, width, height);
+            const data = imgData.data;
+            let score = 0;
+            // 簡易的なエッジ検出: 隣接ピクセルとの差分の絶対値の総和
+            // 高速化のため、全画素ではなくスキップしながらサンプリング
+            const stride = 4; // 4ピクセルごとにサンプリング
+            for (let y = 0; y < height; y += stride) {
+                for (let x = 0; x < width - 1; x += stride) {
+                    const i = (y * width + x) * 4;
+                    const nextI = (y * width + (x + 1)) * 4;
+                    const diff = Math.abs(data[i] - data[nextI]); // R成分のみで判定
+                    score += diff;
+                }
+            }
+            return score;
+        }
+
         function preprocessImage(src) {
             const crop = calculateCropRegion();
             const srcW = src.width;
             const srcH = src.height;
 
-            // 回転を考慮してクロップ
             let actualCrop = { ...crop };
 
-            // 回転角度に応じてクロップ座標を変換
             if (rotationAngle === 90) {
-                actualCrop = {
-                    x: crop.y,
-                    y: srcH - crop.x - crop.w,
-                    w: crop.h,
-                    h: crop.w
-                };
+                actualCrop = { x: crop.y, y: srcH - crop.x - crop.w, w: crop.h, h: crop.w };
             } else if (rotationAngle === 180) {
-                actualCrop = {
-                    x: srcW - crop.x - crop.w,
-                    y: srcH - crop.y - crop.h,
-                    w: crop.w,
-                    h: crop.h
-                };
+                actualCrop = { x: srcW - crop.x - crop.w, y: srcH - crop.y - crop.h, w: crop.w, h: crop.h };
             } else if (rotationAngle === 270) {
-                actualCrop = {
-                    x: srcW - crop.y - crop.h,
-                    y: crop.x,
-                    w: crop.h,
-                    h: crop.w
-                };
+                actualCrop = { x: srcW - crop.y - crop.h, y: crop.x, w: crop.h, h: crop.w };
             }
 
-            // 境界チェック
             actualCrop.x = Math.max(0, Math.min(actualCrop.x, srcW - 1));
             actualCrop.y = Math.max(0, Math.min(actualCrop.y, srcH - 1));
             actualCrop.w = Math.min(actualCrop.w, srcW - actualCrop.x);
             actualCrop.h = Math.min(actualCrop.h, srcH - actualCrop.y);
 
-            // OCRに最適なサイズ
             const targetWidth = 1200;
             const scale = targetWidth / actualCrop.w;
             const targetHeight = Math.floor(actualCrop.h * scale);
@@ -636,18 +636,15 @@
             processCanvas.width = targetWidth;
             processCanvas.height = targetHeight;
 
-            // 回転を適用してクロップ
             processCtx.save();
 
             if (rotationAngle !== 0) {
-                // 一時的なキャンバスでクロップ
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = actualCrop.w;
                 tempCanvas.height = actualCrop.h;
                 const tempCtx = tempCanvas.getContext('2d');
                 tempCtx.drawImage(src, actualCrop.x, actualCrop.y, actualCrop.w, actualCrop.h, 0, 0, actualCrop.w, actualCrop.h);
 
-                // 回転してからリサイズ
                 if (rotationAngle === 90 || rotationAngle === 270) {
                     processCanvas.width = targetHeight;
                     processCanvas.height = targetWidth;
@@ -662,7 +659,6 @@
 
             processCtx.restore();
 
-            // グレースケール化
             const imgData = processCtx.getImageData(0, 0, processCanvas.width, processCanvas.height);
             const d = imgData.data;
 
@@ -672,32 +668,55 @@
             }
             processCtx.putImageData(imgData, 0, 0);
 
-            // デバッグ表示
-            debugCanvas.width = processCanvas.width;
-            debugCanvas.height = processCanvas.height;
-            debugCtx.drawImage(processCanvas, 0, 0);
-            debugInfo.textContent = `元画像: ${srcW}x${srcH} | クロップ: (${actualCrop.x}, ${actualCrop.y}) ${actualCrop.w}x${actualCrop.h} | 出力: ${processCanvas.width}x${processCanvas.height} | 回転: ${rotationAngle}°`;
-
             return processCanvas;
         }
 
         async function captureAndRecognize() {
             if (!isReady || isProcessing) return;
             isProcessing = true;
-
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0);
-
-            loadingOverlay.classList.remove('d-none');
-            loadingText.textContent = '処理中...';
             shutterBtn.disabled = true;
+            loadingOverlay.classList.remove('d-none');
+            loadingText.textContent = '手振れ補正中...';
 
             try {
-                const processed = preprocessImage(canvas);
+                // バースト撮影（5枚）
+                const burstCount = 5;
+                let bestImage = null;
+                let maxSharpness = -1;
+
+                for (let i = 0; i < burstCount; i++) {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    ctx.drawImage(video, 0, 0);
+
+                    // 前処理（クロップ・回転・グレイスケール）
+                    const processed = preprocessImage(canvas);
+
+                    // 鮮明度計算
+                    const sharpness = calculateSharpness(processCtx, processed.width, processed.height);
+
+                    if (sharpness > maxSharpness) {
+                        maxSharpness = sharpness;
+                        // ベストショットを保存（Canvasの状態をコピー）
+                        if (!bestImage) bestImage = document.createElement('canvas');
+                        bestImage.width = processed.width;
+                        bestImage.height = processed.height;
+                        bestImage.getContext('2d').drawImage(processed, 0, 0);
+                    }
+
+                    // 少し待機（連続撮影の間隔）
+                    await new Promise(r => setTimeout(r, 50));
+                }
+
+                // デバッグ表示更新
+                debugCanvas.width = bestImage.width;
+                debugCanvas.height = bestImage.height;
+                debugCtx.drawImage(bestImage, 0, 0);
+                debugInfo.textContent = `ベストショット選択完了 (スコア: ${maxSharpness}) | 回転: ${rotationAngle}°`;
+
                 loadingText.textContent = 'OCR中...';
 
-                const result = await Tesseract.recognize(processed, 'eng', {
+                const result = await Tesseract.recognize(bestImage, 'eng', {
                     logger: m => {
                         if (m.status === 'recognizing text') {
                             loadingText.textContent = `認識中... ${Math.round(m.progress * 100)}%`;
