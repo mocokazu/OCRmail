@@ -284,7 +284,6 @@
             min-width: 100px;
         }
 
-        /* デバッグ表示用 */
         .debug-section {
             padding: 1rem;
             background: #111;
@@ -339,7 +338,6 @@
     <canvas id="canvas"></canvas>
     <canvas id="processCanvas"></canvas>
 
-    <!-- デバッグ表示エリア -->
     <div class="debug-section">
         <h6>📷 OCR処理画像（デバッグ用）</h6>
         <canvas id="debugCanvas"></canvas>
@@ -483,34 +481,29 @@
             }
         }
 
-        // object-fit: cover を考慮した正確なクロップ座標を計算
         function calculateCropRegion() {
             const containerW = cameraContainer.clientWidth;
             const containerH = cameraContainer.clientHeight;
             const videoW = video.videoWidth;
             const videoH = video.videoHeight;
 
-            // object-fit: cover の場合、ビデオはコンテナを覆うように拡大される
             const containerRatio = containerW / containerH;
             const videoRatio = videoW / videoH;
 
             let visibleW, visibleH, offsetX, offsetY;
 
             if (videoRatio > containerRatio) {
-                // ビデオが横長 → 左右がカットされる
                 visibleH = videoH;
                 visibleW = containerRatio * videoH;
                 offsetX = (videoW - visibleW) / 2;
                 offsetY = 0;
             } else {
-                // ビデオが縦長 → 上下がカットされる
                 visibleW = videoW;
                 visibleH = videoW / containerRatio;
                 offsetX = 0;
                 offsetY = (videoH - visibleH) / 2;
             }
 
-            // ガイド枠の位置（コンテナ内での相対位置）
             const guideRect = guideFrame.getBoundingClientRect();
             const containerRect = cameraContainer.getBoundingClientRect();
 
@@ -519,7 +512,6 @@
             const guideRelW = guideRect.width / containerW;
             const guideRelH = guideRect.height / containerH;
 
-            // ビデオ座標に変換
             const cropX = offsetX + guideRelX * visibleW;
             const cropY = offsetY + guideRelY * visibleH;
             const cropW = guideRelW * visibleW;
@@ -534,10 +526,8 @@
         }
 
         function preprocessImage(src) {
-            // 正確なクロップ領域を計算
             const crop = calculateCropRegion();
 
-            // OCRに最適なサイズにリサイズ（幅1200px程度）
             const targetWidth = 1200;
             const scale = targetWidth / crop.w;
             const targetHeight = Math.floor(crop.h * scale);
@@ -545,29 +535,18 @@
             processCanvas.width = targetWidth;
             processCanvas.height = targetHeight;
 
-            // クロップ＆リサイズ
             processCtx.drawImage(src, crop.x, crop.y, crop.w, crop.h, 0, 0, targetWidth, targetHeight);
 
-            // 画像処理（グレースケール → コントラスト強調 → 二値化）
+            // グレースケール化のみ（二値化なし）
             const imgData = processCtx.getImageData(0, 0, targetWidth, targetHeight);
             const d = imgData.data;
 
-            // 平均輝度を計算して適応的二値化
-            let sum = 0;
-            for (let i = 0; i < d.length; i += 4) {
-                sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-            }
-            const avgBrightness = sum / (d.length / 4);
-            const threshold = avgBrightness * 0.8; // 平均より少し暗い部分を文字と判定
-
             for (let i = 0; i < d.length; i += 4) {
                 const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-                const bin = gray < threshold ? 0 : 255;
-                d[i] = d[i + 1] = d[i + 2] = bin;
+                d[i] = d[i + 1] = d[i + 2] = gray;
             }
             processCtx.putImageData(imgData, 0, 0);
 
-            // デバッグ表示を更新
             debugCanvas.width = processCanvas.width;
             debugCanvas.height = processCanvas.height;
             debugCtx.drawImage(processCanvas, 0, 0);
