@@ -750,12 +750,12 @@
 
             ctx.putImageData(imageData, 0, 0);
 
-            // 3. シャープニング（3x3カーネル）
+            // シャープニング無効化（ノイズ軽減のため）
+            // TrOCRがノイズを文字と誤認識する問題を解決
+            /*
             const sharpened = ctx.getImageData(0, 0, w, h);
             const sd = sharpened.data;
-            // シャープニング弱化（中心値3で軽減）
             const kernel = [0, -0.5, 0, -0.5, 3, -0.5, 0, -0.5, 0];
-
             for (let y = 1; y < h - 1; y++) {
                 for (let x = 1; x < w - 1; x++) {
                     let sum = 0;
@@ -770,8 +770,8 @@
                     sd[i] = sd[i + 1] = sd[i + 2] = sum;
                 }
             }
-
             ctx.putImageData(sharpened, 0, 0);
+            */
         }
 
         // 撮影＆認識
@@ -818,9 +818,13 @@
                     modelUsed = 'Tesseract';
                 }
 
-                debugInfo.textContent = `${modelUsed} | 前処理: コントラスト1.4x + シャープ | 回転: ${rotationAngle}°`;
+                debugInfo.textContent = `${modelUsed} | 前処理: コントラスト1.4x | 回転: ${rotationAngle}°`;
 
+                // クリーンアップ（英数字と.のみ）
                 text = text.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
+
+                // 後処理: TrOCRの幻覚で追加される誤ったプレフィックスを除去
+                text = text.replace(/^(R|RC|INC|REC|GST)(?=[A-Z]?\d)/i, '');
 
                 if (text.length > 0) {
                     showSuccess(`読取: ${text}`);
