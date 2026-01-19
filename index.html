@@ -448,14 +448,8 @@
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
     <script type="module">
-        // Transformers.js - Florence-2 VLM
-        import {
-            Florence2ForConditionalGeneration,
-            AutoProcessor,
-            AutoTokenizer,
-            RawImage,
-            env
-        } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3';
+        // Transformers.js (TrOCR) - 軽量モデル使用
+        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3';
 
         env.allowLocalModels = false;
 
@@ -467,11 +461,7 @@
         let isProcessing = false;
         let confirmCallback = null;
         let rotationAngle = 0;
-
-        // Florence-2モデル
-        let model = null;
-        let processor = null;
-        let tokenizer = null;
+        let ocrPipeline = null;
         let ocrReady = false;
         let useFallback = false;
 
@@ -571,38 +561,29 @@
             debugRotation.textContent = ` (${rotationAngle}°)`;
         }
 
-        // Florence-2モデル初期化
+        // TrOCRパイプライン初期化（軽量モデル）
         async function initOCR() {
             modelBadge.textContent = 'AI読込中...';
             modelBadge.style.background = 'rgba(255,165,0,0.9)';
 
             try {
-                const modelId = 'onnx-community/Florence-2-base-ft';
-
-                // モデルとプロセッサを並列読込
-                modelBadge.textContent = 'モデル読込...';
-
-                [model, processor, tokenizer] = await Promise.all([
-                    Florence2ForConditionalGeneration.from_pretrained(modelId, {
-                        dtype: 'fp32',
-                        progress_callback: (progress) => {
-                            if (progress.status === 'downloading') {
-                                const pct = Math.round((progress.loaded / progress.total) * 100);
-                                modelBadge.textContent = `DL: ${pct}%`;
-                            }
+                // 軽量モデルを使用（約60MB - 最小サイズ）
+                ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
+                    dtype: 'q8', // 量子化で軽量化
+                    progress_callback: (progress) => {
+                        if (progress.status === 'downloading') {
+                            const pct = Math.round((progress.loaded / progress.total) * 100);
+                            modelBadge.textContent = `DL: ${pct}%`;
                         }
-                    }),
-                    AutoProcessor.from_pretrained(modelId),
-                    AutoTokenizer.from_pretrained(modelId)
-                ]);
-
+                    }
+                });
                 ocrReady = true;
                 useFallback = false;
-                modelBadge.textContent = 'Florence-2';
+                modelBadge.textContent = 'TrOCR';
                 modelBadge.style.background = 'rgba(0,200,100,0.9)';
-                console.log('Florence-2 initialized successfully');
+                console.log('TrOCR (small, q8) initialized successfully');
             } catch (err) {
-                console.error('Florence-2 init failed:', err);
+                console.error('TrOCR init failed:', err);
                 useFallback = true;
                 ocrReady = true;
                 modelBadge.textContent = 'Tesseract';
@@ -709,14 +690,12 @@
             actualCrop.w = Math.min(actualCrop.w, srcW - actualCrop.x);
             actualCrop.h = Math.min(actualCrop.h, srcH - actualCrop.y);
 
-            // Florence-2は768x768が最適
-            const targetSize = 768;
-            const scale = Math.min(targetSize / actualCrop.w, targetSize / actualCrop.h);
-            const targetW = Math.floor(actualCrop.w * scale);
-            const targetH = Math.floor(actualCrop.h * scale);
+            const targetWidth = 384;
+            const scale = targetWidth / actualCrop.w;
+            const targetHeight = Math.floor(actualCrop.h * scale);
 
-            processCanvas.width = targetW;
-            processCanvas.height = targetH;
+            processCanvas.width = targetWidth;
+            processCanvas.height = targetHeight;
 
             processCtx.save();
 
@@ -728,46 +707,19 @@
                 tempCtx.drawImage(src, actualCrop.x, actualCrop.y, actualCrop.w, actualCrop.h, 0, 0, actualCrop.w, actualCrop.h);
 
                 if (rotationAngle === 90 || rotationAngle === 270) {
-                    processCanvas.width = targetH;
-                    processCanvas.height = targetW;
+                    processCanvas.width = targetHeight;
+                    processCanvas.height = targetWidth;
                 }
 
                 processCtx.translate(processCanvas.width / 2, processCanvas.height / 2);
                 processCtx.rotate(rotationAngle * Math.PI / 180);
-                processCtx.drawImage(tempCanvas, -targetW / 2, -targetH / 2, targetW, targetH);
+                processCtx.drawImage(tempCanvas, -actualCrop.w * scale / 2, -actualCrop.h * scale / 2, actualCrop.w * scale, actualCrop.h * scale);
             } else {
-                processCtx.drawImage(src, actualCrop.x, actualCrop.y, actualCrop.w, actualCrop.h, 0, 0, targetW, targetH);
+                processCtx.drawImage(src, actualCrop.x, actualCrop.y, actualCrop.w, actualCrop.h, 0, 0, targetWidth, targetHeight);
             }
 
             processCtx.restore();
             return processCanvas;
-        }
-
-        // Florence-2でOCR実行
-        async function runFlorence2OCR(imageCanvas) {
-            // RawImage形式に変換
-            const imageData = imageCanvas.getContext('2d').getImageData(0, 0, imageCanvas.width, imageCanvas.height);
-            const image = new RawImage(imageData.data, imageCanvas.width, imageCanvas.height, 4);
-
-            // プロンプト: OCRタスク
-            const prompt = '<OCR>';
-
-            // 入力を準備
-            const inputs = await processor(image);
-            const promptInputs = await tokenizer(prompt);
-
-            // 推論実行
-            const generatedIds = await model.generate({
-                ...inputs,
-                ...promptInputs,
-                max_new_tokens: 100
-            });
-
-            // 結果をデコード
-            const generatedText = tokenizer.batch_decode(generatedIds, { skip_special_tokens: true })[0];
-
-            // プロンプト部分を除去
-            return generatedText.replace('<OCR>', '').trim();
         }
 
         // 撮影＆認識
@@ -798,16 +750,17 @@
                 debugCtx.drawImage(processed, 0, 0);
 
                 let text = '';
-                let modelUsed = 'Florence-2';
+                let modelUsed = 'TrOCR';
 
-                if (!useFallback && model) {
-                    // Florence-2使用
+                if (!useFallback && ocrPipeline) {
+                    // TrOCR使用
                     loadingText.textContent = 'AI認識中...';
                     try {
-                        text = await runFlorence2OCR(processed);
-                        modelUsed = 'Florence-2';
+                        const result = await ocrPipeline(processed);
+                        text = result[0]?.generated_text || '';
+                        modelUsed = 'TrOCR';
                     } catch (err) {
-                        console.error('Florence-2 recognition failed:', err);
+                        console.error('TrOCR recognition failed:', err);
                         text = await recognizeWithTesseract(processed);
                         modelUsed = 'Tesseract(fallback)';
                     }
