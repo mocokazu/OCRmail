@@ -560,8 +560,10 @@
             modelBadge.style.background = 'rgba(255,165,0,0.9)';
 
             try {
+                // Context 7最適化: q4量子化とWebGPU試行
                 ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
-                    dtype: 'q8',
+                    dtype: 'q4', // q8 -> q4 (軽量化)
+                    device: 'webgpu', // WebGPU試行
                     progress_callback: (progress) => {
                         if (progress.status === 'downloading') {
                             const pct = Math.round((progress.loaded / progress.total) * 100);
@@ -571,15 +573,34 @@
                 });
                 ocrReady = true;
                 useFallback = false;
-                modelBadge.textContent = 'Hybrid';
+                modelBadge.textContent = 'Hybrid (q4)';
                 modelBadge.style.background = 'rgba(0,200,100,0.9)';
-                console.log('TrOCR initialized - Hybrid mode active');
+                console.log('TrOCR initialized - Hybrid mode active (q4/webgpu)');
             } catch (err) {
-                console.error('TrOCR init failed:', err);
-                useFallback = true;
-                ocrReady = true;
-                modelBadge.textContent = 'Tesseract';
-                modelBadge.style.background = 'rgba(200,100,0,0.9)';
+                console.warn('WebGPU/q4 init failed, retrying with defaults:', err);
+                try {
+                    // フォールバック: CPU / q8
+                    ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
+                        dtype: 'q8',
+                        device: 'wasm',
+                        progress_callback: (progress) => {
+                            if (progress.status === 'downloading') {
+                                const pct = Math.round((progress.loaded / progress.total) * 100);
+                                modelBadge.textContent = `DL(CPU): ${pct}%`;
+                            }
+                        }
+                    });
+                    ocrReady = true;
+                    useFallback = false;
+                    modelBadge.textContent = 'Hybrid (CPU)';
+                    modelBadge.style.background = 'rgba(0,150,150,0.9)';
+                } catch (retryErr) {
+                    console.error('TrOCR retry failed:', retryErr);
+                    useFallback = true;
+                    ocrReady = true;
+                    modelBadge.textContent = 'Tesseract';
+                    modelBadge.style.background = 'rgba(200,100,0,0.9)';
+                }
             }
         }
 
