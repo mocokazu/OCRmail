@@ -462,12 +462,13 @@
         let ocrPipeline = null;
         let ocrReady = false;
         let useFallback = false;
+        let tesseractWorker = null; // Workerを永続化
 
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true }); // 最適化
         const processCanvas = document.getElementById('processCanvas');
-        const processCtx = processCanvas.getContext('2d');
+        const processCtx = processCanvas.getContext('2d', { willReadFrequently: true }); // 最適化
         const debugCanvas = document.getElementById('debugCanvas');
         const debugCtx = debugCanvas.getContext('2d');
         const debugInfo = document.getElementById('debugInfo');
@@ -555,9 +556,26 @@
             debugRotation.textContent = ` (${rotationAngle}°)`;
         }
 
+        async function initTesseractWorker() {
+            if (tesseractWorker) return;
+            try {
+                tesseractWorker = await Tesseract.createWorker('eng');
+                await tesseractWorker.setParameters({
+                    tessedit_pageseg_mode: '7',
+                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.'
+                });
+                console.log("Tesseract worker ready");
+            } catch (e) {
+                console.error("Tesseract worker init error:", e);
+            }
+        }
+
         async function initOCR() {
             modelBadge.textContent = 'AI読込中...';
             modelBadge.style.background = 'rgba(255,165,0,0.9)';
+
+            // Tesseract Workerの初期化（並行して行う）
+            initTesseractWorker().catch(e => console.error("Tesseract init failed:", e));
 
             try {
                 // Context 7最適化: q4量子化とWebGPU試行
@@ -710,7 +728,7 @@
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = actualCrop.w;
                 tempCanvas.height = actualCrop.h;
-                const tempCtx = tempCanvas.getContext('2d');
+                const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true }); // 最適化
                 tempCtx.drawImage(src, actualCrop.x, actualCrop.y, actualCrop.w, actualCrop.h, 0, 0, actualCrop.w, actualCrop.h);
 
                 if (rotationAngle === 90 || rotationAngle === 270) {
@@ -837,10 +855,11 @@
         }
 
         async function recognizeWithTesseract(image) {
-            const result = await Tesseract.recognize(image, 'eng', {
-                tessedit_pageseg_mode: '7',
-                tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.'
-            });
+            if (!tesseractWorker) {
+                await initTesseractWorker();
+            }
+            // Workerを再利用して認識
+            const result = await tesseractWorker.recognize(image);
             return result.data.text;
         }
 
