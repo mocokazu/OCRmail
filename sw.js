@@ -1,4 +1,4 @@
-const CACHE_NAME = 'field-scan-v21';
+const CACHE_NAME = 'field-scan-v22';
 const ASSETS = [
   './',
   './index.html',
