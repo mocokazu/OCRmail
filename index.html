@@ -735,7 +735,6 @@
             ctx.putImageData(imageData, 0, 0);
         }
 
-        // 真のハイブリッドOCR
         async function captureAndRecognize() {
             if (!isReady || isProcessing || !ocrReady) {
                 if (!ocrReady) {
@@ -760,57 +759,45 @@
                 debugCanvas.height = processed.height;
                 debugCtx.drawImage(processed, 0, 0);
 
-                // 真のハイブリッドOCR: 両エンジンで認識
+                // メモリ対策: 順次実行（TrOCR優先 -> 失敗/パターン不一致ならTesseract）
                 let trOcrText = '';
-                let tesseractText = '';
+                let text = '';
                 let modelUsed = '';
 
-                // TrOCRで認識
+                // 1. TrOCR実行
                 if (!useFallback && ocrPipeline) {
                     loadingText.textContent = 'AI認識中...';
                     try {
                         const result = await ocrPipeline(processed);
                         trOcrText = result[0]?.generated_text || '';
+
+                        // クリーンアップ & 幻覚除去
+                        trOcrText = trOcrText.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
+                        trOcrText = trOcrText.replace(/^(R|RC|INC|REC|GST)(?=[A-Z]?\d)/i, '');
                     } catch (err) {
                         console.error('TrOCR failed:', err);
                     }
                 }
 
-                // Tesseract.jsで認識（常に実行）
-                loadingText.textContent = 'OCR認識中...';
-                tesseractText = await recognizeWithTesseract(processed);
-
-                // クリーンアップ
-                trOcrText = trOcrText.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
-                tesseractText = tesseractText.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
-
-                // 後処理: 誤ったプレフィックスを除去
-                trOcrText = trOcrText.replace(/^(R|RC|INC|REC|GST)(?=[A-Z]?\d)/i, '');
-                tesseractText = tesseractText.replace(/^(R|RC|INC|REC|GST)(?=[A-Z]?\d)/i, '');
-
-                // 信頼度判定: ロット番号パターン (英字1-3文字 + 数字5-8桁)
+                // パターン判定
                 const lotPattern = /^[A-Z]{1,3}\d{5,8}$/;
                 const trOcrMatch = lotPattern.test(trOcrText);
-                const tesseractMatch = lotPattern.test(tesseractText);
 
-                let text = '';
-                if (trOcrMatch && !tesseractMatch) {
-                    text = trOcrText;
-                    modelUsed = 'TrOCR✓';
-                } else if (!trOcrMatch && tesseractMatch) {
-                    text = tesseractText;
-                    modelUsed = 'Tesseract✓';
-                } else if (trOcrMatch && tesseractMatch) {
-                    // 両方パターンマッチ → TrOCRを優先
+                if (trOcrMatch) {
+                    // TrOCRの結果が良好なら採用（Tesseractは実行しない）
                     text = trOcrText;
                     modelUsed = 'TrOCR';
                 } else {
-                    // どちらもマッチしない → 長い方を採用
-                    text = (trOcrText.length >= tesseractText.length) ? trOcrText : tesseractText;
-                    modelUsed = (text === trOcrText) ? 'TrOCR?' : 'Tesseract?';
+                    // 2. Tesseract実行（TrOCR失敗またはパターン不一致時のみ）
+                    loadingText.textContent = 'OCR再試行...';
+                    const tesseractText = await recognizeWithTesseract(processed);
+                    const cleanTess = tesseractText.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
+
+                    text = cleanTess;
+                    modelUsed = trOcrText ? 'Tesseract(Retry)' : 'Tesseract';
                 }
 
-                debugInfo.textContent = `${modelUsed} | T:${trOcrText || '-'} / S:${tesseractText || '-'}`;
+                debugInfo.textContent = `${modelUsed} | Res:${text}`;
 
                 if (text.length > 0) {
                     showSuccess(`読取: ${text}`);
