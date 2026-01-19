@@ -241,6 +241,18 @@
             font-weight: bold;
         }
 
+        .model-badge {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0, 128, 255, 0.9);
+            color: white;
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+
         .error-toast {
             position: fixed;
             top: 50%;
@@ -340,6 +352,21 @@
             margin-top: 0.5rem;
             word-break: break-all;
         }
+
+        .progress-bar-container {
+            width: 80%;
+            height: 10px;
+            background: #444;
+            border-radius: 5px;
+            margin-top: 1rem;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #0d6efd, #00ff00);
+            transition: width 0.3s;
+        }
     </style>
 </head>
 
@@ -347,6 +374,9 @@
     <div class="loading-overlay d-none" id="loadingOverlay">
         <div class="spinner-border text-light mb-3" role="status"></div>
         <div id="loadingText">読み取り中...</div>
+        <div class="progress-bar-container" id="progressContainer" style="display:none;">
+            <div class="progress-bar-fill" id="progressBar" style="width:0%"></div>
+        </div>
     </div>
 
     <div class="error-toast d-none" id="errorToast">
@@ -374,6 +404,7 @@
         <div class="guide-text">枠内に文字を合わせてください</div>
         <div class="counter-badge"><span id="scanCount">0</span> 件</div>
         <div class="rotation-badge" id="rotationBadge">回転: 0°</div>
+        <div class="model-badge" id="modelBadge">読込中...</div>
     </div>
     <canvas id="canvas"></canvas>
     <canvas id="processCanvas"></canvas>
@@ -432,9 +463,14 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script type="module">
+        // Transformers.js (TrOCR)
+        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3';
 
-    <script>
+        // モデルキャッシュ設定
+        env.cacheDir = './.cache';
+        env.allowLocalModels = false;
+
         let scanResults = [];
         let preventDuplicate = true;
         let stream = null;
@@ -442,6 +478,9 @@
         let isProcessing = false;
         let confirmCallback = null;
         let rotationAngle = 0;
+        let ocrPipeline = null;
+        let ocrReady = false;
+        let useFallback = false;
 
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
@@ -455,6 +494,9 @@
         const guideFrame = document.getElementById('guideFrame');
         const cameraContainer = document.getElementById('cameraContainer');
         const rotationBadge = document.getElementById('rotationBadge');
+        const modelBadge = document.getElementById('modelBadge');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
 
         let audioCtx = null;
         function initAudio() {
@@ -490,8 +532,8 @@
         const confirmDialog = document.getElementById('confirmDialog');
         const confirmText = document.getElementById('confirmText');
 
-        function showError(msg) { errorText.textContent = msg; errorToast.classList.remove('d-none'); }
-        function hideError() { errorToast.classList.add('d-none'); }
+        window.showError = function (msg) { errorText.textContent = msg; errorToast.classList.remove('d-none'); };
+        window.hideError = function () { errorToast.classList.add('d-none'); };
         function showSuccess(msg) {
             successToast.textContent = msg;
             successToast.classList.remove('d-none');
@@ -522,6 +564,37 @@
         function updateRotationDisplay() {
             rotationBadge.textContent = `回転: ${rotationAngle}°`;
             debugRotation.textContent = ` (${rotationAngle}°)`;
+        }
+
+        // TrOCRパイプライン初期化
+        async function initOCR() {
+            modelBadge.textContent = 'AI読込中...';
+            modelBadge.style.background = 'rgba(255,165,0,0.9)';
+
+            try {
+                ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
+                    progress_callback: (progress) => {
+                        if (progress.status === 'downloading') {
+                            const pct = Math.round((progress.loaded / progress.total) * 100);
+                            modelBadge.textContent = `DL: ${pct}%`;
+                        }
+                    }
+                });
+                ocrReady = true;
+                useFallback = false;
+                modelBadge.textContent = 'TrOCR';
+                modelBadge.style.background = 'rgba(0,200,100,0.9)';
+                console.log('TrOCR initialized successfully');
+            } catch (err) {
+                console.error('TrOCR init failed, using Tesseract fallback:', err);
+                useFallback = true;
+                modelBadge.textContent = 'Tesseract';
+                modelBadge.style.background = 'rgba(200,100,0,0.9)';
+                // Tesseract.jsをフォールバックとして動的ロード
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+                document.head.appendChild(script);
+            }
         }
 
         async function startCamera() {
@@ -589,7 +662,6 @@
             };
         }
 
-        // 鮮明度スコア計算
         function calculateSharpness(ctx, width, height) {
             const imgData = ctx.getImageData(0, 0, width, height);
             const data = imgData.data;
@@ -604,48 +676,6 @@
                 }
             }
             return score;
-        }
-
-        // コントラスト強調
-        function enhanceContrast(imgData, factor = 1.5) {
-            const d = imgData.data;
-            for (let i = 0; i < d.length; i += 4) {
-                d[i] = Math.min(255, Math.max(0, ((d[i] - 128) * factor) + 128));
-                d[i + 1] = Math.min(255, Math.max(0, ((d[i + 1] - 128) * factor) + 128));
-                d[i + 2] = Math.min(255, Math.max(0, ((d[i + 2] - 128) * factor) + 128));
-            }
-            return imgData;
-        }
-
-        // シャープニングフィルタ（アンシャープマスク簡易版）
-        function sharpen(ctx, width, height) {
-            const imgData = ctx.getImageData(0, 0, width, height);
-            const d = imgData.data;
-            const copy = new Uint8ClampedArray(d);
-
-            // 3x3シャープニングカーネル
-            const kernel = [
-                0, -1, 0,
-                -1, 5, -1,
-                0, -1, 0
-            ];
-
-            for (let y = 1; y < height - 1; y++) {
-                for (let x = 1; x < width - 1; x++) {
-                    for (let c = 0; c < 3; c++) {
-                        let sum = 0;
-                        for (let ky = -1; ky <= 1; ky++) {
-                            for (let kx = -1; kx <= 1; kx++) {
-                                const idx = ((y + ky) * width + (x + kx)) * 4 + c;
-                                sum += copy[idx] * kernel[(ky + 1) * 3 + (kx + 1)];
-                            }
-                        }
-                        const idx = (y * width + x) * 4 + c;
-                        d[idx] = Math.min(255, Math.max(0, sum));
-                    }
-                }
-            }
-            ctx.putImageData(imgData, 0, 0);
         }
 
         function preprocessImage(src) {
@@ -668,7 +698,7 @@
             actualCrop.w = Math.min(actualCrop.w, srcW - actualCrop.x);
             actualCrop.h = Math.min(actualCrop.h, srcH - actualCrop.y);
 
-            const targetWidth = 1200;
+            const targetWidth = 384; // TrOCR最適サイズ
             const scale = targetWidth / actualCrop.w;
             const targetHeight = Math.floor(actualCrop.h * scale);
 
@@ -697,23 +727,6 @@
             }
 
             processCtx.restore();
-
-            // 1. グレースケール化
-            let imgData = processCtx.getImageData(0, 0, processCanvas.width, processCanvas.height);
-            const d = imgData.data;
-            for (let i = 0; i < d.length; i += 4) {
-                const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-                d[i] = d[i + 1] = d[i + 2] = gray;
-            }
-            processCtx.putImageData(imgData, 0, 0);
-
-            // 2. コントラスト強調
-            imgData = processCtx.getImageData(0, 0, processCanvas.width, processCanvas.height);
-            enhanceContrast(imgData, 1.4);
-            processCtx.putImageData(imgData, 0, 0);
-
-            // 3. シャープニング
-            sharpen(processCtx, processCanvas.width, processCanvas.height);
 
             return processCanvas;
         }
@@ -754,28 +767,31 @@
                 debugCanvas.width = bestImage.width;
                 debugCanvas.height = bestImage.height;
                 debugCtx.drawImage(bestImage, 0, 0);
-                debugInfo.textContent = `ベストショット (スコア: ${maxSharpness}) | コントラスト+シャープ済 | 回転: ${rotationAngle}°`;
 
-                loadingText.textContent = 'OCR中...';
+                let text = '';
 
-                // Tesseract.js最適化設定
-                const result = await Tesseract.recognize(bestImage, 'eng', {
-                    logger: m => {
-                        if (m.status === 'recognizing text') {
-                            loadingText.textContent = `認識中... ${Math.round(m.progress * 100)}%`;
-                        }
-                    },
-                    // PSM 7 = 単一行テキスト
-                    // tessedit_char_whitelist = 認識対象を英数字のみに限定
-                    tessedit_pageseg_mode: '7',
-                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-                });
+                if (ocrReady && !useFallback) {
+                    // TrOCR使用
+                    loadingText.textContent = 'AI認識中...';
+                    const result = await ocrPipeline(bestImage);
+                    text = result[0]?.generated_text || '';
+                    debugInfo.textContent = `TrOCR | スコア: ${maxSharpness} | 回転: ${rotationAngle}°`;
+                } else {
+                    // Tesseract.jsフォールバック
+                    loadingText.textContent = 'OCR中...';
+                    const result = await Tesseract.recognize(bestImage, 'eng', {
+                        tessedit_pageseg_mode: '7',
+                        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+                    });
+                    text = result.data.text;
+                    debugInfo.textContent = `Tesseract | スコア: ${maxSharpness} | 回転: ${rotationAngle}°`;
+                }
 
-                const confidence = result.data.confidence || 0;
-                let text = result.data.text.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+                // クリーンアップ
+                text = text.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 
                 if (text.length > 0) {
-                    showSuccess(confidence < 50 ? `読取: ${text} (確度低)` : `読取: ${text}`);
+                    showSuccess(`読取: ${text}`);
                     addScanResult(text);
                 } else {
                     showError("認識できませんでした。\n文字を枠内に大きく入れてください。");
@@ -837,11 +853,11 @@
             updateUI();
         }
 
-        function removeScanResult(index) {
+        window.removeScanResult = function (index) {
             scanResults.splice(index, 1);
             saveToLocal();
             updateUI();
-        }
+        };
 
         function clearAll() {
             showConfirmDialog("リストをすべて削除しますか？", () => {
@@ -880,7 +896,12 @@
         document.getElementById('saveSettings').addEventListener('click', saveSettings);
         document.getElementById('sendEmail').addEventListener('click', sendEmail);
 
-        window.addEventListener('load', () => { loadFromLocal(); startCamera(); });
+        // 初期化
+        window.addEventListener('load', async () => {
+            loadFromLocal();
+            startCamera();
+            await initOCR();
+        });
 
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
