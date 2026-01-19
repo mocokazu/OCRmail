@@ -59,7 +59,7 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 80%;
+            width: 90%;
             height: 15%;
             border: 3px solid #00ff00;
             border-radius: 8px;
@@ -739,8 +739,8 @@
                 d[i] = d[i + 1] = d[i + 2] = gray;
             }
 
-            // 2. コントラスト強調 (1.8倍)
-            const contrast = 1.8;
+            // 2. コントラスト強調 (1.4倍 - 文字形状保持)
+            const contrast = 1.4;
             for (let i = 0; i < d.length; i += 4) {
                 let v = d[i];
                 v = ((v - 128) * contrast) + 128;
@@ -753,7 +753,8 @@
             // 3. シャープニング（3x3カーネル）
             const sharpened = ctx.getImageData(0, 0, w, h);
             const sd = sharpened.data;
-            const kernel = [0, -1, 0, -1, 5, -1, 0, -1, 0];
+            // シャープニング弱化（中心値3で軽減）
+            const kernel = [0, -0.5, 0, -0.5, 3, -0.5, 0, -0.5, 0];
 
             for (let y = 1; y < h - 1; y++) {
                 for (let x = 1; x < w - 1; x++) {
