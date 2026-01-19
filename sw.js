@@ -1,4 +1,4 @@
-const CACHE_NAME = 'field-scan-v20';
+const CACHE_NAME = 'field-scan-v21';
 const ASSETS = [
   './',
   './index.html',
@@ -18,15 +18,21 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
-      );
-    })
+    Promise.all([
+      // 古いキャッシュを削除
+      caches.keys().then((keys) => {
+        return Promise.all(
+          keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+        );
+      }),
+      // 全クライアントを即座に更新
+      self.clients.claim()
+    ])
   );
 });
 
 self.addEventListener('fetch', (event) => {
+  // ネットワーク優先、失敗時のみキャッシュ
   event.respondWith(
     fetch(event.request).catch(() => caches.match(event.request))
   );
