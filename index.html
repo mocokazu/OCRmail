@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>現場スキャンWeb v30</title>
+    <title>現場スキャンWeb v32</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" href="icons/icon-192.png">
     <meta name="theme-color" content="#212529">
@@ -53,7 +53,6 @@
             display: none;
         }
 
-        /* ガイド枠（AI Studio風） */
         .guide-frame {
             position: absolute;
             top: 50%;
@@ -67,7 +66,6 @@
             box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
         }
 
-        /* コーナーマーカー */
         .corner-marker {
             position: absolute;
             width: 20px;
@@ -109,7 +107,6 @@
             border-bottom-right-radius: 8px;
         }
 
-        /* 処理中アニメーション */
         .guide-processing {
             position: absolute;
             top: 0;
@@ -214,7 +211,6 @@
             margin-bottom: 1rem;
         }
 
-        /* シャッターバー（グラデーション背景） */
         .shutter-bar {
             position: fixed;
             bottom: 0;
@@ -229,7 +225,6 @@
             z-index: 1000;
         }
 
-        /* シャッターボタン（赤） */
         .shutter-btn {
             width: 80px;
             height: 80px;
@@ -355,7 +350,7 @@
             position: absolute;
             bottom: 10px;
             left: 10px;
-            background: rgba(0, 128, 255, 0.9);
+            background: rgba(0, 200, 100, 0.9);
             color: white;
             padding: 0.3rem 0.8rem;
             border-radius: 20px;
@@ -494,28 +489,6 @@
             text-align: center;
             text-transform: uppercase;
         }
-
-        .lightweight-badge {
-            position: absolute;
-            bottom: 10px;
-            right: 10px;
-            background: rgba(255, 100, 0, 0.9);
-            color: white;
-            padding: 0.3rem 0.8rem;
-            border-radius: 20px;
-            font-size: 0.7rem;
-            font-weight: bold;
-        }
-
-        .lightweight-badge.d-none {
-            display: none !important;
-        }
-
-        .mode-hint {
-            font-size: 0.75rem;
-            color: #888;
-            margin-top: 0.25rem;
-        }
     </style>
 </head>
 
@@ -553,7 +526,7 @@
         </div>
     </div>
 
-    <div class="header">現場スキャンWeb v30</div>
+    <div class="header">現場スキャンWeb v32</div>
 
     <div id="cameraContainer">
         <video id="video" autoplay playsinline muted></video>
@@ -570,7 +543,6 @@
         <div class="counter-badge"><span id="scanCount">0</span> 件</div>
         <div class="rotation-badge" id="rotationBadge">回転: 0°</div>
         <div class="model-badge" id="modelBadge">準備中...</div>
-        <div class="lightweight-badge d-none" id="lightweightBadge">軽量</div>
     </div>
     <canvas id="canvas"></canvas>
     <canvas id="processCanvas"></canvas>
@@ -605,14 +577,6 @@
                             <input class="form-check-input" type="checkbox" role="switch" id="preventDuplicate" checked>
                             <label class="form-check-label text-white" for="preventDuplicate">重複読み取り防止</label>
                         </div>
-                        <hr class="border-secondary">
-                        <div class="mb-3 form-check form-switch">
-                            <input class="form-check-input" type="checkbox" role="switch" id="lightweightMode">
-                            <label class="form-check-label text-white" for="lightweightMode">
-                                🚀 軽量モード（安定性重視）
-                            </label>
-                            <div class="mode-hint">ONでメモリ使用量が減り、動作が安定します</div>
-                        </div>
                         <button class="btn btn-primary w-100 btn-lg" id="saveSettings">設定を保存</button>
                     </div>
                 </div>
@@ -637,16 +601,15 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
     <script type="module">
+        // v32: TrOCRのみモード（Tesseract削除でメモリ安定化）
         import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3';
 
         env.allowLocalModels = false;
 
         let scanResults = [];
         let preventDuplicate = true;
-        let lightweightMode = false;
         let stream = null;
         let isReady = false;
         let isProcessing = false;
@@ -654,8 +617,6 @@
         let rotationAngle = 0;
         let ocrPipeline = null;
         let ocrReady = false;
-        let useFallback = false;
-        let tesseractWorker = null;
         let editIndex = -1;
 
         const video = document.getElementById('video');
@@ -672,14 +633,12 @@
         const cameraContainer = document.getElementById('cameraContainer');
         const rotationBadge = document.getElementById('rotationBadge');
         const modelBadge = document.getElementById('modelBadge');
-        const lightweightBadge = document.getElementById('lightweightBadge');
         const shutterBtn = document.getElementById('shutterBtn');
         const rotateBtn = document.getElementById('rotateBtn');
         const rotateBtnCCW = document.getElementById('rotateBtnCCW');
         const scanList = document.getElementById('scanList');
         const scanCount = document.getElementById('scanCount');
         const preventDuplicateCheckbox = document.getElementById('preventDuplicate');
-        const lightweightModeCheckbox = document.getElementById('lightweightMode');
         const loadingOverlay = document.getElementById('loadingOverlay');
         const loadingText = document.getElementById('loadingText');
         const errorToast = document.getElementById('errorToast');
@@ -782,46 +741,13 @@
             debugRotation.textContent = ` (${rotationAngle}°)`;
         }
 
-        function updateLightweightDisplay() {
-            if (lightweightMode) {
-                lightweightBadge.classList.remove('d-none');
-                modelBadge.textContent = 'Tesseract';
-                modelBadge.style.background = 'rgba(255,100,0,0.9)';
-            } else {
-                lightweightBadge.classList.add('d-none');
-            }
-        }
-
-        async function initTesseractWorker() {
-            if (tesseractWorker) return;
-            try {
-                tesseractWorker = await Tesseract.createWorker('eng');
-                await tesseractWorker.setParameters({
-                    tessedit_pageseg_mode: '7',
-                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.'
-                });
-                console.log("Tesseract worker ready");
-            } catch (e) {
-                console.error("Tesseract worker init error:", e);
-            }
-        }
-
+        // TrOCRのみ初期化（Tesseract削除）
         async function initOCR() {
             modelBadge.textContent = 'AI読込中...';
             modelBadge.style.background = 'rgba(255,165,0,0.9)';
 
-            await initTesseractWorker().catch(e => console.error("Tesseract init failed:", e));
-
-            if (lightweightMode) {
-                ocrReady = true;
-                useFallback = true;
-                modelBadge.textContent = 'Tesseract';
-                modelBadge.style.background = 'rgba(255,100,0,0.9)';
-                console.log('Lightweight mode - Tesseract only');
-                return;
-            }
-
             try {
+                // WebGPU + q4量子化を優先
                 ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
                     dtype: 'q4',
                     device: 'webgpu',
@@ -833,27 +759,26 @@
                     }
                 });
                 ocrReady = true;
-                useFallback = false;
-                modelBadge.textContent = 'Hybrid (q4)';
+                modelBadge.textContent = 'TrOCR (q4)';
                 modelBadge.style.background = 'rgba(0,200,100,0.9)';
-                console.log('TrOCR initialized');
+                console.log('TrOCR initialized (WebGPU/q4)');
             } catch (err) {
-                console.warn('TrOCR init failed:', err);
+                console.warn('WebGPU failed, trying WASM:', err);
                 try {
+                    // WASMフォールバック
                     ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
                         dtype: 'q8',
                         device: 'wasm'
                     });
                     ocrReady = true;
-                    useFallback = false;
-                    modelBadge.textContent = 'Hybrid (CPU)';
+                    modelBadge.textContent = 'TrOCR (CPU)';
                     modelBadge.style.background = 'rgba(0,150,150,0.9)';
+                    console.log('TrOCR initialized (WASM/q8)');
                 } catch (retryErr) {
-                    console.error('TrOCR retry failed:', retryErr);
-                    useFallback = true;
-                    ocrReady = true;
-                    modelBadge.textContent = 'Tesseract';
-                    modelBadge.style.background = 'rgba(200,100,0,0.9)';
+                    console.error('TrOCR init failed:', retryErr);
+                    modelBadge.textContent = 'エラー';
+                    modelBadge.style.background = 'rgba(220,53,69,0.9)';
+                    showError('OCRの初期化に失敗しました。ページを再読込してください。');
                 }
             }
         }
@@ -924,7 +849,7 @@
             return { x: Math.floor(cropX), y: Math.floor(cropY), w: Math.floor(cropW), h: Math.floor(cropH) };
         }
 
-        function preprocessImage(src, forTesseract = false) {
+        function preprocessImage(src) {
             const crop = calculateCropRegion();
             const srcW = src.width;
             const srcH = src.height;
@@ -973,79 +898,32 @@
             }
 
             processCtx.restore();
-            enhanceImage(processCanvas, processCtx, forTesseract);
-            return processCanvas;
-        }
 
-        function enhanceImage(canvas, ctx, forTesseract = false) {
-            const w = canvas.width;
-            const h = canvas.height;
-            const imageData = ctx.getImageData(0, 0, w, h);
+            // TrOCR用: グレースケール + コントラスト強調（二値化なし）
+            const w = processCanvas.width;
+            const h = processCanvas.height;
+            const imageData = processCtx.getImageData(0, 0, w, h);
             const d = imageData.data;
 
             for (let i = 0; i < d.length; i += 4) {
-                const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+                let gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+                // コントラスト強調 1.4倍
+                gray = ((gray - 128) * 1.4) + 128;
+                gray = Math.max(0, Math.min(255, gray));
                 d[i] = d[i + 1] = d[i + 2] = gray;
             }
+            processCtx.putImageData(imageData, 0, 0);
 
-            if (forTesseract) {
-                const contrast = 1.5;
-                for (let i = 0; i < d.length; i += 4) {
-                    let v = d[i];
-                    v = ((v - 128) * contrast) + 128;
-                    v = Math.max(0, Math.min(255, v));
-                    d[i] = d[i + 1] = d[i + 2] = v;
-                }
-
-                const histogram = new Array(256).fill(0);
-                for (let i = 0; i < d.length; i += 4) {
-                    histogram[Math.round(d[i])]++;
-                }
-
-                const totalPixels = w * h;
-                let sum = 0;
-                for (let t = 0; t < 256; t++) sum += t * histogram[t];
-
-                let sumB = 0, wB = 0;
-                let maxVariance = 0, threshold = 128;
-
-                for (let t = 0; t < 256; t++) {
-                    wB += histogram[t];
-                    if (wB === 0) continue;
-                    const wF = totalPixels - wB;
-                    if (wF === 0) break;
-
-                    sumB += t * histogram[t];
-                    const mB = sumB / wB;
-                    const mF = (sum - sumB) / wF;
-                    const variance = wB * wF * (mB - mF) * (mB - mF);
-
-                    if (variance > maxVariance) {
-                        maxVariance = variance;
-                        threshold = t;
-                    }
-                }
-
-                for (let i = 0; i < d.length; i += 4) {
-                    const val = d[i] < threshold ? 0 : 255;
-                    d[i] = d[i + 1] = d[i + 2] = val;
-                }
-            } else {
-                const contrast = 1.4;
-                for (let i = 0; i < d.length; i += 4) {
-                    let v = d[i];
-                    v = ((v - 128) * contrast) + 128;
-                    v = Math.max(0, Math.min(255, v));
-                    d[i] = d[i + 1] = d[i + 2] = v;
-                }
-            }
-
-            ctx.putImageData(imageData, 0, 0);
+            return processCanvas;
         }
 
         function postProcessText(text) {
             let result = text;
+            // 記号除去
+            result = result.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
+            // TrOCR先頭幻覚除去
             result = result.replace(/^(R|RC|INC|REC|GST)(?=[A-Z]?\d)/i, '');
+            // 既知の誤読パターン補正
             result = result.replace(/^THNO/i, 'CHNO');
             result = result.replace(/^ITHNG/i, 'CHNO');
             result = result.replace(/^AN0/i, 'NO.');
@@ -1055,7 +933,7 @@
 
         async function captureAndRecognize() {
             if (!isReady || isProcessing || !ocrReady) {
-                if (!ocrReady) showError("OCRの準備ができていません。");
+                if (!ocrReady) showError("OCRの準備ができていません。少々お待ちください。");
                 return;
             }
 
@@ -1068,58 +946,29 @@
                 canvas.height = video.videoHeight;
                 ctx.drawImage(video, 0, 0);
 
-                const processedTrOCR = preprocessImage(canvas, false);
+                const processed = preprocessImage(canvas);
 
+                // パディング追加（左40px + 右80px）
                 const padL = 40;
                 const padR = 80;
                 const paddedCanvas = document.createElement('canvas');
-                paddedCanvas.width = processedTrOCR.width + padL + padR;
-                paddedCanvas.height = processedTrOCR.height;
+                paddedCanvas.width = processed.width + padL + padR;
+                paddedCanvas.height = processed.height;
                 const paddedCtx = paddedCanvas.getContext('2d');
                 paddedCtx.fillStyle = '#FFFFFF';
                 paddedCtx.fillRect(0, 0, paddedCanvas.width, paddedCanvas.height);
-                paddedCtx.drawImage(processedTrOCR, padL, 0);
+                paddedCtx.drawImage(processed, padL, 0);
 
                 debugCanvas.width = paddedCanvas.width;
                 debugCanvas.height = paddedCanvas.height;
                 debugCtx.drawImage(paddedCanvas, 0, 0);
 
-                let trOcrText = '';
-                let text = '';
-                let modelUsed = '';
+                // TrOCR実行
+                const result = await ocrPipeline(paddedCanvas);
+                let text = result[0]?.generated_text || '';
+                text = postProcessText(text);
 
-                if (!lightweightMode && !useFallback && ocrPipeline) {
-                    try {
-                        const result = await ocrPipeline(paddedCanvas);
-                        trOcrText = result[0]?.generated_text || '';
-                        trOcrText = trOcrText.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
-                        trOcrText = postProcessText(trOcrText);
-                    } catch (err) {
-                        console.error('TrOCR failed:', err);
-                    }
-                }
-
-                const lotPattern = /^[A-Z]{1,4}[\.\d]{5,10}$/;
-                const trOcrMatch = lotPattern.test(trOcrText);
-
-                if (trOcrMatch) {
-                    text = trOcrText;
-                    modelUsed = 'TrOCR';
-                } else {
-                    const processedTess = preprocessImage(canvas, true);
-                    const tesseractText = await recognizeWithTesseract(processedTess);
-                    let cleanTess = tesseractText.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
-                    cleanTess = postProcessText(cleanTess);
-
-                    text = cleanTess;
-                    modelUsed = lightweightMode ? 'Tesseract' : (trOcrText ? 'Tess(Retry)' : 'Tesseract');
-
-                    debugCanvas.width = processedTess.width;
-                    debugCanvas.height = processedTess.height;
-                    debugCtx.drawImage(processedTess, 0, 0);
-                }
-
-                debugInfo.textContent = `${modelUsed} | ${text}`;
+                debugInfo.textContent = `TrOCR | ${text}`;
 
                 if (text.length > 0) {
                     showSuccess(`読取: ${text}`);
@@ -1137,12 +986,6 @@
             }
         }
 
-        async function recognizeWithTesseract(image) {
-            if (!tesseractWorker) await initTesseractWorker();
-            const result = await tesseractWorker.recognize(image);
-            return result.data.text;
-        }
-
         function saveToLocal() {
             try { localStorage.setItem('fieldScan_results', JSON.stringify(scanResults)); }
             catch (e) { console.error('Failed to save:', e); }
@@ -1155,17 +998,12 @@
                 const emailTo = localStorage.getItem('fieldScan_emailTo');
                 const emailSubject = localStorage.getItem('fieldScan_emailSubject');
                 const savedPrev = localStorage.getItem('fieldScan_preventDuplicate');
-                const savedLightweight = localStorage.getItem('fieldScan_lightweightMode');
                 const savedRotation = localStorage.getItem('fieldScan_rotation');
                 if (emailTo) document.getElementById('emailTo').value = emailTo;
                 if (emailSubject) document.getElementById('emailSubject').value = emailSubject;
                 if (savedPrev !== null) {
                     preventDuplicate = savedPrev === 'true';
                     preventDuplicateCheckbox.checked = preventDuplicate;
-                }
-                if (savedLightweight !== null) {
-                    lightweightMode = savedLightweight === 'true';
-                    lightweightModeCheckbox.checked = lightweightMode;
                 }
                 if (savedRotation !== null) {
                     rotationAngle = parseInt(savedRotation) || 0;
@@ -1180,17 +1018,8 @@
                 localStorage.setItem('fieldScan_emailSubject', document.getElementById('emailSubject').value);
                 preventDuplicate = preventDuplicateCheckbox.checked;
                 localStorage.setItem('fieldScan_preventDuplicate', preventDuplicate);
-                const newLightweightMode = lightweightModeCheckbox.checked;
-                const modeChanged = newLightweightMode !== lightweightMode;
-                lightweightMode = newLightweightMode;
-                localStorage.setItem('fieldScan_lightweightMode', lightweightMode);
                 showSuccess("設定を保存しました");
                 bootstrap.Collapse.getInstance(document.getElementById('collapseSettings'))?.hide();
-
-                if (modeChanged) {
-                    showSuccess("モード変更。再読込します...");
-                    setTimeout(() => location.reload(), 1000);
-                }
             } catch (e) { showError("設定の保存に失敗しました"); }
         }
 
@@ -1236,7 +1065,6 @@
                     </div>
                 `).join('');
             }
-            updateLightweightDisplay();
         }
 
         function sendEmail() {
@@ -1255,7 +1083,6 @@
 
         window.addEventListener('load', async () => {
             loadFromLocal();
-            updateLightweightDisplay();
             await startCamera();
             await initOCR();
         });
