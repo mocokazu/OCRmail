@@ -444,6 +444,12 @@
             margin-top: 0.3rem;
         }
 
+        .gpu-info {
+            color: #f0f;
+            font-size: 0.7rem;
+            margin-top: 0.3rem;
+        }
+
         .edit-content input {
             font-size: 1.5rem;
             font-family: monospace;
@@ -458,14 +464,11 @@
         <div class="spinner-border text-light mb-3" role="status"></div>
         <div id="loadingText">読み取り中...</div>
     </div>
-
     <div class="error-toast d-none" id="errorToast">
         <div id="errorText"></div>
         <button class="btn btn-light btn-sm mt-2" onclick="hideError()">閉じる</button>
     </div>
-
     <div class="success-toast d-none" id="successToast"></div>
-
     <div class="confirm-dialog d-none" id="confirmDialog">
         <div class="confirm-content">
             <div id="confirmText"></div>
@@ -475,7 +478,6 @@
             </div>
         </div>
     </div>
-
     <div class="edit-dialog d-none" id="editDialog">
         <div class="edit-content">
             <h5 class="text-white mb-3">読み取り結果を修正</h5>
@@ -486,9 +488,7 @@
             </div>
         </div>
     </div>
-
     <div class="header">現場スキャンWeb v33</div>
-
     <div id="cameraContainer">
         <video id="video" autoplay playsinline muted></video>
         <div class="guide-frame" id="guideFrame">
@@ -500,25 +500,24 @@
         </div>
         <div class="guide-text">枠内に番号を合わせてください</div>
         <div class="counter-badge"><span id="scanCount">0</span> 件</div>
-        <div class="rotation-badge" id="rotationBadge">回転: 0°</div>
+        <div class="rotation-badge" id="rotationBadge">回転: 0度</div>
         <div class="model-badge" id="modelBadge">準備中...</div>
     </div>
     <canvas id="canvas"></canvas>
     <canvas id="processCanvas"></canvas>
-
     <div class="debug-section">
         <h6>OCR処理画像<span id="debugRotation"></span></h6>
         <canvas id="debugCanvas"></canvas>
         <div class="debug-info" id="debugInfo"></div>
         <div class="timing-info" id="timingInfo"></div>
+        <div class="gpu-info" id="gpuInfo">GPU: 確認中...</div>
     </div>
-
     <div class="list-section">
         <div class="accordion mb-3" id="settingsAccordion">
             <div class="accordion-item border-0">
                 <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
-                        data-bs-target="#collapseSettings">⚙️ 設定</button>
+                        data-bs-target="#collapseSettings">設定</button>
                 </h2>
                 <div id="collapseSettings" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
                     <div class="accordion-body">
@@ -551,7 +550,6 @@
                 </div>
             </div>
         </div>
-
         <div class="d-flex justify-content-between align-items-center mb-2">
             <span class="text-large">読み取りリスト <small class="text-muted">(タップで編集)</small></span>
             <button class="btn btn-outline-danger btn-sm" id="clearList">全削除</button>
@@ -559,18 +557,14 @@
         <div class="scan-list" id="scanList">
             <div class="p-3 text-center text-muted">データがありません。</div>
         </div>
-
-        <button class="btn btn-primary w-100 btn-send" id="sendEmail">📧 メールで送信</button>
+        <button class="btn btn-primary w-100 btn-send" id="sendEmail">メールで送信</button>
     </div>
-
     <div class="shutter-bar">
-        <button class="rotate-btn" id="rotateBtn" title="画像を回転">🔄</button>
+        <button class="rotate-btn" id="rotateBtn" title="画像を回転">↻</button>
         <button class="shutter-btn" id="shutterBtn" disabled></button>
         <button class="rotate-btn" id="rotateBtnCCW" title="逆回転">↺</button>
     </div>
-
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
     <script type="module">
         import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3';
         env.allowLocalModels = false;
@@ -587,7 +581,6 @@
         let ocrPipeline = null;
         let ocrReady = false;
         let editIndex = -1;
-
         let cachedTmpCanvas = null;
         let cachedPaddedCanvas = null;
 
@@ -601,6 +594,7 @@
         const debugInfo = document.getElementById('debugInfo');
         const debugRotation = document.getElementById('debugRotation');
         const timingInfo = document.getElementById('timingInfo');
+        const gpuInfo = document.getElementById('gpuInfo');
         const guideFrame = document.getElementById('guideFrame');
         const guideProcessing = document.getElementById('guideProcessing');
         const cameraContainer = document.getElementById('cameraContainer');
@@ -641,56 +635,58 @@
 
         window.showError = function (msg) { errorText.textContent = msg; errorToast.classList.remove('d-none'); };
         window.hideError = function () { errorToast.classList.add('d-none'); };
-        function showSuccess(msg) { successToast.textContent = msg; successToast.classList.remove('d-none'); setTimeout(() => successToast.classList.add('d-none'), 1500); }
+        function showSuccess(msg) { successToast.textContent = msg; successToast.classList.remove('d-none'); setTimeout(function () { successToast.classList.add('d-none'); }, 1500); }
         function showConfirmDialog(msg, onConfirm) { confirmText.textContent = msg; confirmCallback = onConfirm; confirmDialog.classList.remove('d-none'); }
         function hideConfirmDialog() { confirmDialog.classList.add('d-none'); confirmCallback = null; }
         function showEditDialog(index) { editIndex = index; editInput.value = scanResults[index]; editDialog.classList.remove('d-none'); editInput.focus(); editInput.select(); }
         function hideEditDialog() { editDialog.classList.add('d-none'); editIndex = -1; }
         function saveEdit() { if (editIndex >= 0 && editInput.value.trim()) { scanResults[editIndex] = editInput.value.trim().toUpperCase(); saveToLocal(); updateUI(); showSuccess('修正しました'); } hideEditDialog(); }
 
-        document.getElementById('confirmOk').addEventListener('click', () => { if (confirmCallback) confirmCallback(); hideConfirmDialog(); });
+        document.getElementById('confirmOk').addEventListener('click', function () { if (confirmCallback) confirmCallback(); hideConfirmDialog(); });
         document.getElementById('confirmCancel').addEventListener('click', hideConfirmDialog);
         document.getElementById('editSave').addEventListener('click', saveEdit);
         document.getElementById('editCancel').addEventListener('click', hideEditDialog);
-        editInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') hideEditDialog(); });
+        editInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') hideEditDialog(); });
 
-        document.getElementById('rotateBtn').addEventListener('click', () => { rotationAngle = (rotationAngle + 90) % 360; updateRotationDisplay(); localStorage.setItem('fieldScan_rotation', rotationAngle); });
-        document.getElementById('rotateBtnCCW').addEventListener('click', () => { rotationAngle = (rotationAngle - 90 + 360) % 360; updateRotationDisplay(); localStorage.setItem('fieldScan_rotation', rotationAngle); });
-        contrastSlider.addEventListener('input', () => { contrastLevel = parseFloat(contrastSlider.value); contrastValue.textContent = contrastLevel.toFixed(1); });
+        document.getElementById('rotateBtn').addEventListener('click', function () { rotationAngle = (rotationAngle + 90) % 360; updateRotationDisplay(); localStorage.setItem('fieldScan_rotation', rotationAngle); });
+        document.getElementById('rotateBtnCCW').addEventListener('click', function () { rotationAngle = (rotationAngle - 90 + 360) % 360; updateRotationDisplay(); localStorage.setItem('fieldScan_rotation', rotationAngle); });
+        contrastSlider.addEventListener('input', function () { contrastLevel = parseFloat(contrastSlider.value); contrastValue.textContent = contrastLevel.toFixed(1); });
 
-        function updateRotationDisplay() { rotationBadge.textContent = '回転: ' + rotationAngle + '°'; debugRotation.textContent = ' (' + rotationAngle + '°)'; }
+        function updateRotationDisplay() { rotationBadge.textContent = '回転: ' + rotationAngle + '度'; debugRotation.textContent = ' (' + rotationAngle + '度)'; }
 
-        // WebGPU事前チェック付きOCR初期化
         async function initOCR() {
             modelBadge.textContent = 'AI読込中...';
             modelBadge.style.background = 'rgba(255,165,0,0.9)';
 
-            // WebGPUサポートチェック
             let useWebGPU = false;
             try {
                 if ('gpu' in navigator) {
+                    gpuInfo.textContent = 'GPU: adapter確認中...';
                     const adapter = await navigator.gpu.requestAdapter();
                     if (adapter) {
                         useWebGPU = true;
-                        console.log('WebGPU adapter found');
+                        gpuInfo.textContent = 'GPU: adapter取得OK';
+                        gpuInfo.style.color = '#0f0';
                     } else {
-                        console.log('WebGPU adapter not available');
+                        gpuInfo.textContent = 'GPU: adapter取得失敗 (要iPhone15Pro以降)';
+                        gpuInfo.style.color = '#f00';
                     }
                 } else {
-                    console.log('navigator.gpu not available');
+                    gpuInfo.textContent = 'GPU: 非対応ブラウザ';
+                    gpuInfo.style.color = '#f00';
                 }
             } catch (e) {
-                console.warn('WebGPU check failed:', e);
+                gpuInfo.textContent = 'GPU: エラー - ' + e.message;
+                gpuInfo.style.color = '#f00';
             }
-            console.log('WebGPU available:', useWebGPU);
 
             try {
                 if (useWebGPU) {
-                    console.log('Trying WebGPU with fp16...');
+                    gpuInfo.textContent = gpuInfo.textContent + ' -> fp16ロード中...';
                     ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
                         dtype: 'fp16',
                         device: 'webgpu',
-                        progress_callback: (p) => {
+                        progress_callback: function (p) {
                             if (p.status === 'downloading') {
                                 modelBadge.textContent = 'DL: ' + Math.round((p.loaded / p.total) * 100) + '%';
                             }
@@ -699,18 +695,19 @@
                     ocrReady = true;
                     modelBadge.textContent = 'TrOCR (GPU)';
                     modelBadge.style.background = 'rgba(0,200,100,0.9)';
-                    console.log('TrOCR initialized with WebGPU');
+                    gpuInfo.textContent = 'GPU: WebGPU成功!';
+                    gpuInfo.style.color = '#0f0';
                 } else {
                     throw new Error('WebGPU unavailable');
                 }
             } catch (err) {
-                console.warn('WebGPU pipeline failed:', err.message);
+                gpuInfo.textContent = 'GPU: ' + err.message + ' -> CPUへ';
+                gpuInfo.style.color = '#ff0';
                 try {
-                    console.log('Falling back to WASM...');
                     ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
                         dtype: 'q8',
                         device: 'wasm',
-                        progress_callback: (p) => {
+                        progress_callback: function (p) {
                             if (p.status === 'downloading') {
                                 modelBadge.textContent = 'DL: ' + Math.round((p.loaded / p.total) * 100) + '%';
                             }
@@ -719,9 +716,7 @@
                     ocrReady = true;
                     modelBadge.textContent = 'TrOCR (CPU)';
                     modelBadge.style.background = 'rgba(0,150,150,0.9)';
-                    console.log('TrOCR initialized with WASM');
                 } catch (e) {
-                    console.error('All OCR init failed:', e);
                     modelBadge.textContent = 'エラー';
                     modelBadge.style.background = 'rgba(220,53,69,0.9)';
                     showError('OCR初期化失敗');
@@ -734,34 +729,34 @@
                 initAudio();
                 stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } });
                 video.srcObject = stream;
-                video.onloadedmetadata = () => { isReady = true; shutterBtn.disabled = false; };
+                video.onloadedmetadata = function () { isReady = true; shutterBtn.disabled = false; };
             } catch (e) { showError("カメラ起動失敗: " + e.message); }
         }
 
         function calculateCropRegion() {
-            const cW = cameraContainer.clientWidth, cH = cameraContainer.clientHeight;
-            const vW = video.videoWidth, vH = video.videoHeight;
-            const cRatio = cW / cH, vRatio = vW / vH;
-            let visW, visH, offX, offY;
+            var cW = cameraContainer.clientWidth, cH = cameraContainer.clientHeight;
+            var vW = video.videoWidth, vH = video.videoHeight;
+            var cRatio = cW / cH, vRatio = vW / vH;
+            var visW, visH, offX, offY;
             if (vRatio > cRatio) { visH = vH; visW = cRatio * vH; offX = (vW - visW) / 2; offY = 0; }
             else { visW = vW; visH = vW / cRatio; offX = 0; offY = (vH - visH) / 2; }
-            const gRect = guideFrame.getBoundingClientRect(), cRect = cameraContainer.getBoundingClientRect();
-            const gRelX = (gRect.left - cRect.left) / cW, gRelY = (gRect.top - cRect.top) / cH;
-            const gRelW = gRect.width / cW, gRelH = gRect.height / cH;
+            var gRect = guideFrame.getBoundingClientRect(), cRect = cameraContainer.getBoundingClientRect();
+            var gRelX = (gRect.left - cRect.left) / cW, gRelY = (gRect.top - cRect.top) / cH;
+            var gRelW = gRect.width / cW, gRelH = gRect.height / cH;
             return { x: Math.floor(offX + gRelX * visW), y: Math.floor(offY + gRelY * visH), w: Math.floor(gRelW * visW), h: Math.floor(gRelH * visH) };
         }
 
         function preprocessImage(src) {
-            const crop = calculateCropRegion();
-            const sW = src.width, sH = src.height;
-            let aC = { x: crop.x, y: crop.y, w: crop.w, h: crop.h };
+            var crop = calculateCropRegion();
+            var sW = src.width, sH = src.height;
+            var aC = { x: crop.x, y: crop.y, w: crop.w, h: crop.h };
             if (rotationAngle === 90) aC = { x: crop.y, y: sH - crop.x - crop.w, w: crop.h, h: crop.w };
             else if (rotationAngle === 180) aC = { x: sW - crop.x - crop.w, y: sH - crop.y - crop.h, w: crop.w, h: crop.h };
             else if (rotationAngle === 270) aC = { x: sW - crop.y - crop.h, y: crop.x, w: crop.h, h: crop.w };
             aC.x = Math.max(0, Math.min(aC.x, sW - 1)); aC.y = Math.max(0, Math.min(aC.y, sH - 1));
             aC.w = Math.min(aC.w, sW - aC.x); aC.h = Math.min(aC.h, sH - aC.y);
 
-            const tW = 384, scale = tW / aC.w, tH = Math.floor(aC.h * scale);
+            var tW = 384, scale = tW / aC.w, tH = Math.floor(aC.h * scale);
             processCanvas.width = tW; processCanvas.height = tH;
             processCtx.save();
 
@@ -778,24 +773,19 @@
             }
             processCtx.restore();
 
-            const w = processCanvas.width, h = processCanvas.height;
-            const imgData = processCtx.getImageData(0, 0, w, h);
-            const d = imgData.data;
+            var w = processCanvas.width, h = processCanvas.height;
+            var imgData = processCtx.getImageData(0, 0, w, h);
+            var d = imgData.data;
 
-            for (let i = 0; i < d.length; i += 4) {
-                const r = d[i], g = d[i + 1], b = d[i + 2];
-
+            for (var i = 0; i < d.length; i += 4) {
+                var r = d[i], g = d[i + 1], b = d[i + 2];
                 if (colorEnhance) {
-                    const max = Math.max(r, g, b);
-                    const min = Math.min(r, g, b);
-                    const sat = max === 0 ? 0 : (max - min) / max;
-                    if (sat > 0.25) {
-                        d[i] = d[i + 1] = d[i + 2] = 0;
-                        continue;
-                    }
+                    var max = Math.max(r, g, b);
+                    var min = Math.min(r, g, b);
+                    var sat = max === 0 ? 0 : (max - min) / max;
+                    if (sat > 0.25) { d[i] = d[i + 1] = d[i + 2] = 0; continue; }
                 }
-
-                let gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                var gray = 0.299 * r + 0.587 * g + 0.114 * b;
                 gray = ((gray - 128) * contrastLevel) + 128;
                 gray = Math.max(0, Math.min(255, gray));
                 d[i] = d[i + 1] = d[i + 2] = gray;
@@ -805,7 +795,7 @@
         }
 
         function postProcessText(text) {
-            let r = text.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
+            var r = text.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
             r = r.replace(/^(R|RC|INC|REC|GST)(?=[A-Z]?\d)/i, '');
             r = r.replace(/^THNO/i, 'CHNO').replace(/^ITHNG/i, 'CHNO');
             r = r.replace(/^AN0/i, 'NO.').replace(/^ANO/i, 'NO.');
@@ -816,36 +806,35 @@
             if (!isReady || isProcessing || !ocrReady) { if (!ocrReady) showError("OCR準備中..."); return; }
             isProcessing = true; shutterBtn.disabled = true; guideProcessing.classList.remove('d-none');
 
-            const t0 = performance.now();
-
+            var t0 = performance.now();
             try {
                 canvas.width = video.videoWidth; canvas.height = video.videoHeight;
                 ctx.drawImage(video, 0, 0);
-                const t1 = performance.now();
+                var t1 = performance.now();
 
-                const processed = preprocessImage(canvas);
-                const t2 = performance.now();
+                var processed = preprocessImage(canvas);
+                var t2 = performance.now();
 
-                const padL = 40, padR = 80;
+                var padL = 40, padR = 80;
                 if (!cachedPaddedCanvas) cachedPaddedCanvas = document.createElement('canvas');
                 cachedPaddedCanvas.width = processed.width + padL + padR;
                 cachedPaddedCanvas.height = processed.height;
-                const pCtx = cachedPaddedCanvas.getContext('2d');
+                var pCtx = cachedPaddedCanvas.getContext('2d');
                 pCtx.fillStyle = '#FFFFFF';
                 pCtx.fillRect(0, 0, cachedPaddedCanvas.width, cachedPaddedCanvas.height);
                 pCtx.drawImage(processed, padL, 0);
-                const t3 = performance.now();
+                var t3 = performance.now();
 
                 debugCanvas.width = cachedPaddedCanvas.width;
                 debugCanvas.height = cachedPaddedCanvas.height;
                 debugCtx.drawImage(cachedPaddedCanvas, 0, 0);
 
-                const result = await ocrPipeline(cachedPaddedCanvas);
-                const t4 = performance.now();
+                var result = await ocrPipeline(cachedPaddedCanvas);
+                var t4 = performance.now();
 
-                let text = postProcessText(result[0]?.generated_text || '');
+                var text = postProcessText(result[0]?.generated_text || '');
 
-                timingInfo.textContent = '⏱ キャプチャ:' + (t1 - t0).toFixed(0) + 'ms 前処理:' + (t2 - t1).toFixed(0) + 'ms パディング:' + (t3 - t2).toFixed(0) + 'ms OCR:' + (t4 - t3).toFixed(0) + 'ms 合計:' + (t4 - t0).toFixed(0) + 'ms';
+                timingInfo.textContent = 'キャプチャ:' + (t1 - t0).toFixed(0) + 'ms 前処理:' + (t2 - t1).toFixed(0) + 'ms OCR:' + (t4 - t3).toFixed(0) + 'ms 合計:' + (t4 - t0).toFixed(0) + 'ms';
                 debugInfo.textContent = 'TrOCR | ' + text + ' | コントラスト:' + contrastLevel + ' カラー強調:' + (colorEnhance ? 'ON' : 'OFF');
 
                 if (text.length > 0) { showSuccess('読取: ' + text); addScanResult(text); }
@@ -857,13 +846,13 @@
         function saveToLocal() { try { localStorage.setItem('fieldScan_results', JSON.stringify(scanResults)); } catch (e) { } }
         function loadFromLocal() {
             try {
-                const s = localStorage.getItem('fieldScan_results'); if (s) { scanResults = JSON.parse(s); updateUI(); }
-                const e = localStorage.getItem('fieldScan_emailTo'); if (e) document.getElementById('emailTo').value = e;
-                const es = localStorage.getItem('fieldScan_emailSubject'); if (es) document.getElementById('emailSubject').value = es;
-                const p = localStorage.getItem('fieldScan_preventDuplicate'); if (p !== null) { preventDuplicate = p === 'true'; preventDuplicateCheckbox.checked = preventDuplicate; }
-                const r = localStorage.getItem('fieldScan_rotation'); if (r !== null) { rotationAngle = parseInt(r) || 0; updateRotationDisplay(); }
-                const c = localStorage.getItem('fieldScan_contrast'); if (c !== null) { contrastLevel = parseFloat(c); contrastSlider.value = contrastLevel; contrastValue.textContent = contrastLevel.toFixed(1); }
-                const ce = localStorage.getItem('fieldScan_colorEnhance'); if (ce !== null) { colorEnhance = ce === 'true'; colorEnhanceCheckbox.checked = colorEnhance; }
+                var s = localStorage.getItem('fieldScan_results'); if (s) { scanResults = JSON.parse(s); updateUI(); }
+                var e = localStorage.getItem('fieldScan_emailTo'); if (e) document.getElementById('emailTo').value = e;
+                var es = localStorage.getItem('fieldScan_emailSubject'); if (es) document.getElementById('emailSubject').value = es;
+                var p = localStorage.getItem('fieldScan_preventDuplicate'); if (p !== null) { preventDuplicate = p === 'true'; preventDuplicateCheckbox.checked = preventDuplicate; }
+                var r = localStorage.getItem('fieldScan_rotation'); if (r !== null) { rotationAngle = parseInt(r) || 0; updateRotationDisplay(); }
+                var c = localStorage.getItem('fieldScan_contrast'); if (c !== null) { contrastLevel = parseFloat(c); contrastSlider.value = contrastLevel; contrastValue.textContent = contrastLevel.toFixed(1); }
+                var ce = localStorage.getItem('fieldScan_colorEnhance'); if (ce !== null) { colorEnhance = ce === 'true'; colorEnhanceCheckbox.checked = colorEnhance; }
             } catch (e) { }
         }
         function saveSettings() {
@@ -885,14 +874,20 @@
         }
         window.removeScanResult = function (i) { scanResults.splice(i, 1); saveToLocal(); updateUI(); };
         window.editScanResult = function (i) { showEditDialog(i); };
-        function clearAll() { showConfirmDialog("リストをすべて削除しますか？", () => { scanResults = []; saveToLocal(); updateUI(); showSuccess("削除しました"); }); }
+        function clearAll() { showConfirmDialog("リストをすべて削除しますか?", function () { scanResults = []; saveToLocal(); updateUI(); showSuccess("削除しました"); }); }
         function updateUI() {
             scanCount.innerText = scanResults.length;
             if (scanResults.length === 0) { scanList.innerHTML = '<div class="p-3 text-center text-muted">データがありません。</div>'; }
-            else { scanList.innerHTML = scanResults.map((c, i) => '<div class="scan-item"><span class="code" onclick="editScanResult(' + i + ')">' + c + '</span><button class="btn btn-outline-danger btn-sm" onclick="removeScanResult(' + i + ')">削除</button></div>').join(''); }
+            else {
+                var html = '';
+                for (var i = 0; i < scanResults.length; i++) {
+                    html += '<div class="scan-item"><span class="code" onclick="editScanResult(' + i + ')">' + scanResults[i] + '</span><button class="btn btn-outline-danger btn-sm" onclick="removeScanResult(' + i + ')">削除</button></div>';
+                }
+                scanList.innerHTML = html;
+            }
         }
         function sendEmail() {
-            const to = document.getElementById('emailTo').value, sub = document.getElementById('emailSubject').value;
+            var to = document.getElementById('emailTo').value, sub = document.getElementById('emailSubject').value;
             if (!to) { showError("送信先を設定してください"); return; }
             if (scanResults.length === 0) { showError("データがありません"); return; }
             window.location.href = 'mailto:' + to + '?subject=' + encodeURIComponent(sub) + '&body=' + encodeURIComponent(scanResults.join('\n'));
@@ -903,9 +898,9 @@
         document.getElementById('saveSettings').addEventListener('click', saveSettings);
         document.getElementById('sendEmail').addEventListener('click', sendEmail);
 
-        window.addEventListener('load', async () => { loadFromLocal(); await startCamera(); await initOCR(); });
+        window.addEventListener('load', async function () { loadFromLocal(); await startCamera(); await initOCR(); });
 
-        if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(e => { }); }); }
+        if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('./sw.js').catch(function (e) { }); }); }
     </script>
 </body>
 
