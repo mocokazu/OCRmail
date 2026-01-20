@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>OCR Scanner v33</title>
+    <title>OCR Scanner v34</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" href="icons/icon-192.png">
     <meta name="theme-color" content="#212529">
@@ -444,12 +444,6 @@
             margin-top: 0.3rem;
         }
 
-        .gpu-info {
-            color: #f0f;
-            font-size: 0.7rem;
-            margin-top: 0.3rem;
-        }
-
         .edit-content input {
             font-size: 1.5rem;
             font-family: monospace;
@@ -488,7 +482,7 @@
             </div>
         </div>
     </div>
-    <div class="header">OCR Scanner v33</div>
+    <div class="header">OCR Scanner v34 (Tesseract)</div>
     <div id="cameraContainer">
         <video id="video" autoplay playsinline muted></video>
         <div class="guide-frame" id="guideFrame">
@@ -510,7 +504,6 @@
         <canvas id="debugCanvas"></canvas>
         <div class="debug-info" id="debugInfo"></div>
         <div class="timing-info" id="timingInfo"></div>
-        <div class="gpu-info" id="gpuInfo">GPU: checking...</div>
     </div>
     <div class="list-section">
         <div class="accordion mb-3" id="settingsAccordion">
@@ -541,10 +534,6 @@
                             <input type="range" class="form-range" id="contrastSlider" min="1.0" max="2.5" step="0.1"
                                 value="1.4">
                         </div>
-                        <div class="mb-3 form-check form-switch">
-                            <input class="form-check-input" type="checkbox" role="switch" id="colorEnhance" checked>
-                            <label class="form-check-label text-white" for="colorEnhance">Color Enhance</label>
-                        </div>
                         <button class="btn btn-primary w-100 btn-lg" id="saveSettings">Save Settings</button>
                     </div>
                 </div>
@@ -565,342 +554,333 @@
         <button class="rotate-btn" id="rotateBtnCCW">L</button>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script type="module">
-        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3';
-        env.allowLocalModels = false;
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script>
+        (function () {
+            'use strict';
 
-        let scanResults = [];
-        let preventDuplicate = true;
-        let contrastLevel = 1.4;
-        let colorEnhance = true;
-        let stream = null;
-        let isReady = false;
-        let isProcessing = false;
-        let confirmCallback = null;
-        let rotationAngle = 0;
-        let ocrPipeline = null;
-        let ocrReady = false;
-        let editIndex = -1;
-        let cachedTmpCanvas = null;
-        let cachedPaddedCanvas = null;
+            let scanResults = [];
+            let preventDuplicate = true;
+            let contrastLevel = 1.4;
+            let stream = null;
+            let isReady = false;
+            let isProcessing = false;
+            let confirmCallback = null;
+            let rotationAngle = 0;
+            let ocrReady = false;
+            let editIndex = -1;
+            let tessWorker = null;
 
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        const processCanvas = document.getElementById('processCanvas');
-        const processCtx = processCanvas.getContext('2d', { willReadFrequently: true });
-        const debugCanvas = document.getElementById('debugCanvas');
-        const debugCtx = debugCanvas.getContext('2d');
-        const debugInfo = document.getElementById('debugInfo');
-        const debugRotation = document.getElementById('debugRotation');
-        const timingInfo = document.getElementById('timingInfo');
-        const gpuInfo = document.getElementById('gpuInfo');
-        const guideFrame = document.getElementById('guideFrame');
-        const guideProcessing = document.getElementById('guideProcessing');
-        const cameraContainer = document.getElementById('cameraContainer');
-        const rotationBadge = document.getElementById('rotationBadge');
-        const modelBadge = document.getElementById('modelBadge');
-        const shutterBtn = document.getElementById('shutterBtn');
-        const scanList = document.getElementById('scanList');
-        const scanCount = document.getElementById('scanCount');
-        const preventDuplicateCheckbox = document.getElementById('preventDuplicate');
-        const colorEnhanceCheckbox = document.getElementById('colorEnhance');
-        const errorToast = document.getElementById('errorToast');
-        const errorText = document.getElementById('errorText');
-        const successToast = document.getElementById('successToast');
-        const confirmDialog = document.getElementById('confirmDialog');
-        const confirmText = document.getElementById('confirmText');
-        const editDialog = document.getElementById('editDialog');
-        const editInput = document.getElementById('editInput');
-        const contrastSlider = document.getElementById('contrastSlider');
-        const contrastValue = document.getElementById('contrastValue');
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            const processCanvas = document.getElementById('processCanvas');
+            const processCtx = processCanvas.getContext('2d', { willReadFrequently: true });
+            const debugCanvas = document.getElementById('debugCanvas');
+            const debugCtx = debugCanvas.getContext('2d');
+            const debugInfo = document.getElementById('debugInfo');
+            const debugRotation = document.getElementById('debugRotation');
+            const timingInfo = document.getElementById('timingInfo');
+            const guideFrame = document.getElementById('guideFrame');
+            const guideProcessing = document.getElementById('guideProcessing');
+            const cameraContainer = document.getElementById('cameraContainer');
+            const rotationBadge = document.getElementById('rotationBadge');
+            const modelBadge = document.getElementById('modelBadge');
+            const shutterBtn = document.getElementById('shutterBtn');
+            const scanList = document.getElementById('scanList');
+            const scanCount = document.getElementById('scanCount');
+            const preventDuplicateCheckbox = document.getElementById('preventDuplicate');
+            const errorToast = document.getElementById('errorToast');
+            const errorText = document.getElementById('errorText');
+            const successToast = document.getElementById('successToast');
+            const confirmDialog = document.getElementById('confirmDialog');
+            const confirmText = document.getElementById('confirmText');
+            const editDialog = document.getElementById('editDialog');
+            const editInput = document.getElementById('editInput');
+            const contrastSlider = document.getElementById('contrastSlider');
+            const contrastValue = document.getElementById('contrastValue');
 
-        let audioCtx = null;
-        function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-        function playBeep() {
-            try {
-                if (!audioCtx) initAudio();
-                if (audioCtx.state === 'suspended') audioCtx.resume();
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.connect(gain);
-                gain.connect(audioCtx.destination);
-                osc.type = "sine";
-                osc.frequency.setValueAtTime(880, audioCtx.currentTime);
-                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-                osc.start();
-                osc.stop(audioCtx.currentTime + 0.1);
-            } catch (e) { }
-        }
-
-        window.showError = function (msg) { errorText.textContent = msg; errorToast.classList.remove('d-none'); };
-        window.hideError = function () { errorToast.classList.add('d-none'); };
-        function showSuccess(msg) { successToast.textContent = msg; successToast.classList.remove('d-none'); setTimeout(function () { successToast.classList.add('d-none'); }, 1500); }
-        function showConfirmDialog(msg, onConfirm) { confirmText.textContent = msg; confirmCallback = onConfirm; confirmDialog.classList.remove('d-none'); }
-        function hideConfirmDialog() { confirmDialog.classList.add('d-none'); confirmCallback = null; }
-        function showEditDialog(index) { editIndex = index; editInput.value = scanResults[index]; editDialog.classList.remove('d-none'); editInput.focus(); editInput.select(); }
-        function hideEditDialog() { editDialog.classList.add('d-none'); editIndex = -1; }
-        function saveEdit() { if (editIndex >= 0 && editInput.value.trim()) { scanResults[editIndex] = editInput.value.trim().toUpperCase(); saveToLocal(); updateUI(); showSuccess('Saved'); } hideEditDialog(); }
-
-        document.getElementById('confirmOk').addEventListener('click', function () { if (confirmCallback) confirmCallback(); hideConfirmDialog(); });
-        document.getElementById('confirmCancel').addEventListener('click', hideConfirmDialog);
-        document.getElementById('editSave').addEventListener('click', saveEdit);
-        document.getElementById('editCancel').addEventListener('click', hideEditDialog);
-        editInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') hideEditDialog(); });
-
-        document.getElementById('rotateBtn').addEventListener('click', function () { rotationAngle = (rotationAngle + 90) % 360; updateRotationDisplay(); localStorage.setItem('fieldScan_rotation', rotationAngle); });
-        document.getElementById('rotateBtnCCW').addEventListener('click', function () { rotationAngle = (rotationAngle - 90 + 360) % 360; updateRotationDisplay(); localStorage.setItem('fieldScan_rotation', rotationAngle); });
-        contrastSlider.addEventListener('input', function () { contrastLevel = parseFloat(contrastSlider.value); contrastValue.textContent = contrastLevel.toFixed(1); });
-
-        function updateRotationDisplay() { rotationBadge.textContent = 'Rot: ' + rotationAngle; debugRotation.textContent = ' (' + rotationAngle + ')'; }
-
-        async function initOCR() {
-            modelBadge.textContent = 'Loading AI...';
-            modelBadge.style.background = 'rgba(255,165,0,0.9)';
-
-            let useWebGPU = false;
-            try {
-                if ('gpu' in navigator) {
-                    gpuInfo.textContent = 'GPU: checking adapter...';
-                    const adapter = await navigator.gpu.requestAdapter();
-                    if (adapter) {
-                        useWebGPU = true;
-                        gpuInfo.textContent = 'GPU: adapter OK';
-                        gpuInfo.style.color = '#0f0';
-                    } else {
-                        gpuInfo.textContent = 'GPU: no adapter (need iPhone15Pro+)';
-                        gpuInfo.style.color = '#f00';
-                    }
-                } else {
-                    gpuInfo.textContent = 'GPU: not supported';
-                    gpuInfo.style.color = '#f00';
-                }
-            } catch (e) {
-                gpuInfo.textContent = 'GPU: error - ' + e.message;
-                gpuInfo.style.color = '#f00';
+            let audioCtx = null;
+            function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+            function playBeep() {
+                try {
+                    if (!audioCtx) initAudio();
+                    if (audioCtx.state === 'suspended') audioCtx.resume();
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.type = "sine";
+                    osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+                    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.1);
+                } catch (e) { }
             }
 
-            try {
-                if (useWebGPU) {
-                    gpuInfo.textContent = gpuInfo.textContent + ' -> loading fp32...';
-                    ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
-                        dtype: 'fp32',
-                        device: 'webgpu',
-                        progress_callback: function (p) {
-                            if (p.status === 'downloading') {
-                                modelBadge.textContent = 'DL: ' + Math.round((p.loaded / p.total) * 100) + '%';
-                            }
-                        }
-                    });
-                    ocrReady = true;
-                    modelBadge.textContent = 'TrOCR (GPU)';
-                    modelBadge.style.background = 'rgba(0,200,100,0.9)';
-                    gpuInfo.textContent = 'GPU: WebGPU OK!';
-                    gpuInfo.style.color = '#0f0';
-                } else {
-                    throw new Error('WebGPU unavailable');
+            window.showError = function (msg) { errorText.textContent = msg; errorToast.classList.remove('d-none'); };
+            window.hideError = function () { errorToast.classList.add('d-none'); };
+            function showSuccess(msg) { successToast.textContent = msg; successToast.classList.remove('d-none'); setTimeout(function () { successToast.classList.add('d-none'); }, 1500); }
+            function showConfirmDialog(msg, onConfirm) { confirmText.textContent = msg; confirmCallback = onConfirm; confirmDialog.classList.remove('d-none'); }
+            function hideConfirmDialog() { confirmDialog.classList.add('d-none'); confirmCallback = null; }
+            function showEditDialog(index) { editIndex = index; editInput.value = scanResults[index]; editDialog.classList.remove('d-none'); editInput.focus(); editInput.select(); }
+            function hideEditDialog() { editDialog.classList.add('d-none'); editIndex = -1; }
+            function saveEdit() { if (editIndex >= 0 && editInput.value.trim()) { scanResults[editIndex] = editInput.value.trim().toUpperCase(); saveToLocal(); updateUI(); showSuccess('Saved'); } hideEditDialog(); }
+
+            document.getElementById('confirmOk').addEventListener('click', function () { if (confirmCallback) confirmCallback(); hideConfirmDialog(); });
+            document.getElementById('confirmCancel').addEventListener('click', hideConfirmDialog);
+            document.getElementById('editSave').addEventListener('click', saveEdit);
+            document.getElementById('editCancel').addEventListener('click', hideEditDialog);
+            editInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') hideEditDialog(); });
+
+            document.getElementById('rotateBtn').addEventListener('click', function () { rotationAngle = (rotationAngle + 90) % 360; updateRotationDisplay(); localStorage.setItem('fieldScan_rotation', rotationAngle); });
+            document.getElementById('rotateBtnCCW').addEventListener('click', function () { rotationAngle = (rotationAngle - 90 + 360) % 360; updateRotationDisplay(); localStorage.setItem('fieldScan_rotation', rotationAngle); });
+            contrastSlider.addEventListener('input', function () { contrastLevel = parseFloat(contrastSlider.value); contrastValue.textContent = contrastLevel.toFixed(1); });
+
+            function updateRotationDisplay() { rotationBadge.textContent = 'Rot: ' + rotationAngle; debugRotation.textContent = ' (' + rotationAngle + ')'; }
+
+            // Otsu threshold calculation
+            function otsuThreshold(histogram, total) {
+                var sum = 0, sumB = 0, wB = 0, wF = 0, maxVar = 0, threshold = 128;
+                for (var i = 0; i < 256; i++) sum += i * histogram[i];
+                for (var i = 0; i < 256; i++) {
+                    wB += histogram[i];
+                    if (wB === 0) continue;
+                    wF = total - wB;
+                    if (wF === 0) break;
+                    sumB += i * histogram[i];
+                    var mB = sumB / wB;
+                    var mF = (sum - sumB) / wF;
+                    var variance = wB * wF * Math.pow(mB - mF, 2);
+                    if (variance > maxVar) { maxVar = variance; threshold = i; }
                 }
-            } catch (err) {
-                gpuInfo.textContent = 'GPU: ' + err.message + ' -> CPU';
-                gpuInfo.style.color = '#ff0';
+                return threshold;
+            }
+
+            // Tesseract Worker initialization
+            async function initTesseract() {
+                modelBadge.textContent = 'Loading Tesseract...';
+                modelBadge.style.background = 'rgba(255,165,0,0.9)';
                 try {
-                    ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
-                        dtype: 'q8',
-                        device: 'wasm',
-                        progress_callback: function (p) {
-                            if (p.status === 'downloading') {
-                                modelBadge.textContent = 'DL: ' + Math.round((p.loaded / p.total) * 100) + '%';
+                    tessWorker = await Tesseract.createWorker('eng', 1, {
+                        logger: function (m) {
+                            if (m.status === 'recognizing text') {
+                                modelBadge.textContent = 'OCR: ' + Math.round(m.progress * 100) + '%';
                             }
                         }
                     });
+                    await tessWorker.setParameters({
+                        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.',
+                        tessedit_pageseg_mode: '7' // PSM.SINGLE_LINE
+                    });
                     ocrReady = true;
-                    modelBadge.textContent = 'TrOCR (CPU)';
+                    modelBadge.textContent = 'Tesseract';
                     modelBadge.style.background = 'rgba(0,150,150,0.9)';
                 } catch (e) {
                     modelBadge.textContent = 'Error';
                     modelBadge.style.background = 'rgba(220,53,69,0.9)';
-                    showError('OCR init failed');
+                    window.showError('Tesseract init failed: ' + e.message);
                 }
             }
-        }
 
-        async function startCamera() {
-            try {
-                initAudio();
-                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } });
-                video.srcObject = stream;
-                video.onloadedmetadata = function () { isReady = true; shutterBtn.disabled = false; };
-            } catch (e) { showError("Camera failed: " + e.message); }
-        }
-
-        function calculateCropRegion() {
-            var cW = cameraContainer.clientWidth, cH = cameraContainer.clientHeight;
-            var vW = video.videoWidth, vH = video.videoHeight;
-            var cRatio = cW / cH, vRatio = vW / vH;
-            var visW, visH, offX, offY;
-            if (vRatio > cRatio) { visH = vH; visW = cRatio * vH; offX = (vW - visW) / 2; offY = 0; }
-            else { visW = vW; visH = vW / cRatio; offX = 0; offY = (vH - visH) / 2; }
-            var gRect = guideFrame.getBoundingClientRect(), cRect = cameraContainer.getBoundingClientRect();
-            var gRelX = (gRect.left - cRect.left) / cW, gRelY = (gRect.top - cRect.top) / cH;
-            var gRelW = gRect.width / cW, gRelH = gRect.height / cH;
-            return { x: Math.floor(offX + gRelX * visW), y: Math.floor(offY + gRelY * visH), w: Math.floor(gRelW * visW), h: Math.floor(gRelH * visH) };
-        }
-
-        function preprocessImage(src) {
-            var crop = calculateCropRegion();
-            var sW = src.width, sH = src.height;
-            var aC = { x: crop.x, y: crop.y, w: crop.w, h: crop.h };
-            if (rotationAngle === 90) aC = { x: crop.y, y: sH - crop.x - crop.w, w: crop.h, h: crop.w };
-            else if (rotationAngle === 180) aC = { x: sW - crop.x - crop.w, y: sH - crop.y - crop.h, w: crop.w, h: crop.h };
-            else if (rotationAngle === 270) aC = { x: sW - crop.y - crop.h, y: crop.x, w: crop.h, h: crop.w };
-            aC.x = Math.max(0, Math.min(aC.x, sW - 1)); aC.y = Math.max(0, Math.min(aC.y, sH - 1));
-            aC.w = Math.min(aC.w, sW - aC.x); aC.h = Math.min(aC.h, sH - aC.y);
-
-            var tW = 384, scale = tW / aC.w, tH = Math.floor(aC.h * scale);
-            processCanvas.width = tW; processCanvas.height = tH;
-            processCtx.save();
-
-            if (rotationAngle !== 0) {
-                if (!cachedTmpCanvas) cachedTmpCanvas = document.createElement('canvas');
-                cachedTmpCanvas.width = aC.w; cachedTmpCanvas.height = aC.h;
-                cachedTmpCanvas.getContext('2d').drawImage(src, aC.x, aC.y, aC.w, aC.h, 0, 0, aC.w, aC.h);
-                if (rotationAngle === 90 || rotationAngle === 270) { processCanvas.width = tH; processCanvas.height = tW; }
-                processCtx.translate(processCanvas.width / 2, processCanvas.height / 2);
-                processCtx.rotate(rotationAngle * Math.PI / 180);
-                processCtx.drawImage(cachedTmpCanvas, -aC.w * scale / 2, -aC.h * scale / 2, aC.w * scale, aC.h * scale);
-            } else {
-                processCtx.drawImage(src, aC.x, aC.y, aC.w, aC.h, 0, 0, tW, tH);
+            async function startCamera() {
+                try {
+                    initAudio();
+                    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } });
+                    video.srcObject = stream;
+                    video.onloadedmetadata = function () { isReady = true; shutterBtn.disabled = false; };
+                } catch (e) { window.showError("Camera failed: " + e.message); }
             }
-            processCtx.restore();
 
-            var w = processCanvas.width, h = processCanvas.height;
-            var imgData = processCtx.getImageData(0, 0, w, h);
-            var d = imgData.data;
+            function calculateCropRegion() {
+                var cW = cameraContainer.clientWidth, cH = cameraContainer.clientHeight;
+                var vW = video.videoWidth, vH = video.videoHeight;
+                var cRatio = cW / cH, vRatio = vW / vH;
+                var visW, visH, offX, offY;
+                if (vRatio > cRatio) { visH = vH; visW = cRatio * vH; offX = (vW - visW) / 2; offY = 0; }
+                else { visW = vW; visH = vW / cRatio; offX = 0; offY = (vH - visH) / 2; }
+                var gRect = guideFrame.getBoundingClientRect(), cRect = cameraContainer.getBoundingClientRect();
+                var gRelX = (gRect.left - cRect.left) / cW, gRelY = (gRect.top - cRect.top) / cH;
+                var gRelW = gRect.width / cW, gRelH = gRect.height / cH;
+                return { x: Math.floor(offX + gRelX * visW), y: Math.floor(offY + gRelY * visH), w: Math.floor(gRelW * visW), h: Math.floor(gRelH * visH) };
+            }
 
-            for (var i = 0; i < d.length; i += 4) {
-                var r = d[i], g = d[i + 1], b = d[i + 2];
-                if (colorEnhance) {
-                    var max = Math.max(r, g, b);
-                    var min = Math.min(r, g, b);
-                    var sat = max === 0 ? 0 : (max - min) / max;
-                    if (sat > 0.25) { d[i] = d[i + 1] = d[i + 2] = 0; continue; }
+            function preprocessImage(src) {
+                var crop = calculateCropRegion();
+                var sW = src.width, sH = src.height;
+                var aC = { x: crop.x, y: crop.y, w: crop.w, h: crop.h };
+                if (rotationAngle === 90) aC = { x: crop.y, y: sH - crop.x - crop.w, w: crop.h, h: crop.w };
+                else if (rotationAngle === 180) aC = { x: sW - crop.x - crop.w, y: sH - crop.y - crop.h, w: crop.w, h: crop.h };
+                else if (rotationAngle === 270) aC = { x: sW - crop.y - crop.h, y: crop.x, w: crop.h, h: crop.w };
+                aC.x = Math.max(0, Math.min(aC.x, sW - 1)); aC.y = Math.max(0, Math.min(aC.y, sH - 1));
+                aC.w = Math.min(aC.w, sW - aC.x); aC.h = Math.min(aC.h, sH - aC.y);
+
+                // Target: 30px char height (Tesseract optimal)
+                var targetHeight = 60; // assume char is ~50% of crop height
+                var scale = targetHeight / aC.h;
+                var tW = Math.floor(aC.w * scale);
+                var tH = Math.floor(aC.h * scale);
+
+                processCanvas.width = tW; processCanvas.height = tH;
+                processCtx.save();
+
+                if (rotationAngle !== 0) {
+                    var tmpCanvas = document.createElement('canvas');
+                    tmpCanvas.width = aC.w; tmpCanvas.height = aC.h;
+                    tmpCanvas.getContext('2d').drawImage(src, aC.x, aC.y, aC.w, aC.h, 0, 0, aC.w, aC.h);
+                    if (rotationAngle === 90 || rotationAngle === 270) { processCanvas.width = tH; processCanvas.height = tW; }
+                    processCtx.translate(processCanvas.width / 2, processCanvas.height / 2);
+                    processCtx.rotate(rotationAngle * Math.PI / 180);
+                    processCtx.drawImage(tmpCanvas, -tW / 2, -tH / 2, tW, tH);
+                } else {
+                    processCtx.drawImage(src, aC.x, aC.y, aC.w, aC.h, 0, 0, tW, tH);
                 }
-                var gray = 0.299 * r + 0.587 * g + 0.114 * b;
-                gray = ((gray - 128) * contrastLevel) + 128;
-                gray = Math.max(0, Math.min(255, gray));
-                d[i] = d[i + 1] = d[i + 2] = gray;
-            }
-            processCtx.putImageData(imgData, 0, 0);
-            return processCanvas;
-        }
+                processCtx.restore();
 
-        function postProcessText(text) {
-            var r = text.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
-            r = r.replace(/^(R|RC|INC|REC|GST)(?=[A-Z]?\d)/i, '');
-            r = r.replace(/^THNO/i, 'CHNO').replace(/^ITHNG/i, 'CHNO');
-            r = r.replace(/^AN0/i, 'NO.').replace(/^ANO/i, 'NO.');
-            return r;
-        }
+                var w = processCanvas.width, h = processCanvas.height;
+                var imgData = processCtx.getImageData(0, 0, w, h);
+                var d = imgData.data;
 
-        async function captureAndRecognize() {
-            if (!isReady || isProcessing || !ocrReady) { if (!ocrReady) showError("OCR not ready"); return; }
-            isProcessing = true; shutterBtn.disabled = true; guideProcessing.classList.remove('d-none');
+                // 1. Grayscale
+                var histogram = new Array(256).fill(0);
+                for (var i = 0; i < d.length; i += 4) {
+                    var gray = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+                    d[i] = d[i + 1] = d[i + 2] = gray;
+                    histogram[gray]++;
+                }
 
-            var t0 = performance.now();
-            try {
-                canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-                ctx.drawImage(video, 0, 0);
-                var t1 = performance.now();
+                // 2. Otsu binarization
+                var threshold = otsuThreshold(histogram, w * h);
+                for (var i = 0; i < d.length; i += 4) {
+                    var val = d[i] > threshold ? 255 : 0;
+                    d[i] = d[i + 1] = d[i + 2] = val;
+                }
 
-                var processed = preprocessImage(canvas);
-                var t2 = performance.now();
+                processCtx.putImageData(imgData, 0, 0);
 
-                var padL = 40, padR = 80;
-                if (!cachedPaddedCanvas) cachedPaddedCanvas = document.createElement('canvas');
-                cachedPaddedCanvas.width = processed.width + padL + padR;
-                cachedPaddedCanvas.height = processed.height;
-                var pCtx = cachedPaddedCanvas.getContext('2d');
+                // 3. Add padding (white border)
+                var paddedCanvas = document.createElement('canvas');
+                var pad = 20;
+                paddedCanvas.width = processCanvas.width + pad * 2;
+                paddedCanvas.height = processCanvas.height + pad * 2;
+                var pCtx = paddedCanvas.getContext('2d');
                 pCtx.fillStyle = '#FFFFFF';
-                pCtx.fillRect(0, 0, cachedPaddedCanvas.width, cachedPaddedCanvas.height);
-                pCtx.drawImage(processed, padL, 0);
-                var t3 = performance.now();
+                pCtx.fillRect(0, 0, paddedCanvas.width, paddedCanvas.height);
+                pCtx.drawImage(processCanvas, pad, pad);
 
-                debugCanvas.width = cachedPaddedCanvas.width;
-                debugCanvas.height = cachedPaddedCanvas.height;
-                debugCtx.drawImage(cachedPaddedCanvas, 0, 0);
-
-                var result = await ocrPipeline(cachedPaddedCanvas);
-                var t4 = performance.now();
-
-                var text = postProcessText(result[0]?.generated_text || '');
-
-                timingInfo.textContent = 'Cap:' + (t1 - t0).toFixed(0) + 'ms Pre:' + (t2 - t1).toFixed(0) + 'ms OCR:' + (t4 - t3).toFixed(0) + 'ms Total:' + (t4 - t0).toFixed(0) + 'ms';
-                debugInfo.textContent = 'TrOCR | ' + text + ' | Contrast:' + contrastLevel + ' Color:' + (colorEnhance ? 'ON' : 'OFF');
-
-                if (text.length > 0) { showSuccess('Read: ' + text); addScanResult(text); }
-                else { showError("Not recognized"); }
-            } catch (e) { console.error(e); showError("OCR Error"); }
-            finally { guideProcessing.classList.add('d-none'); shutterBtn.disabled = false; isProcessing = false; }
-        }
-
-        function saveToLocal() { try { localStorage.setItem('fieldScan_results', JSON.stringify(scanResults)); } catch (e) { } }
-        function loadFromLocal() {
-            try {
-                var s = localStorage.getItem('fieldScan_results'); if (s) { scanResults = JSON.parse(s); updateUI(); }
-                var e = localStorage.getItem('fieldScan_emailTo'); if (e) document.getElementById('emailTo').value = e;
-                var es = localStorage.getItem('fieldScan_emailSubject'); if (es) document.getElementById('emailSubject').value = es;
-                var p = localStorage.getItem('fieldScan_preventDuplicate'); if (p !== null) { preventDuplicate = p === 'true'; preventDuplicateCheckbox.checked = preventDuplicate; }
-                var r = localStorage.getItem('fieldScan_rotation'); if (r !== null) { rotationAngle = parseInt(r) || 0; updateRotationDisplay(); }
-                var c = localStorage.getItem('fieldScan_contrast'); if (c !== null) { contrastLevel = parseFloat(c); contrastSlider.value = contrastLevel; contrastValue.textContent = contrastLevel.toFixed(1); }
-                var ce = localStorage.getItem('fieldScan_colorEnhance'); if (ce !== null) { colorEnhance = ce === 'true'; colorEnhanceCheckbox.checked = colorEnhance; }
-            } catch (e) { }
-        }
-        function saveSettings() {
-            try {
-                localStorage.setItem('fieldScan_emailTo', document.getElementById('emailTo').value);
-                localStorage.setItem('fieldScan_emailSubject', document.getElementById('emailSubject').value);
-                preventDuplicate = preventDuplicateCheckbox.checked;
-                localStorage.setItem('fieldScan_preventDuplicate', preventDuplicate);
-                localStorage.setItem('fieldScan_contrast', contrastLevel);
-                colorEnhance = colorEnhanceCheckbox.checked;
-                localStorage.setItem('fieldScan_colorEnhance', colorEnhance);
-                showSuccess("Settings saved");
-                bootstrap.Collapse.getInstance(document.getElementById('collapseSettings'))?.hide();
-            } catch (e) { showError("Save failed"); }
-        }
-        function addScanResult(code) {
-            if (preventDuplicate && scanResults.includes(code)) { showError("Duplicate: " + code); return; }
-            playBeep(); scanResults.unshift(code); saveToLocal(); updateUI();
-        }
-        window.removeScanResult = function (i) { scanResults.splice(i, 1); saveToLocal(); updateUI(); };
-        window.editScanResult = function (i) { showEditDialog(i); };
-        function clearAll() { showConfirmDialog("Clear all?", function () { scanResults = []; saveToLocal(); updateUI(); showSuccess("Cleared"); }); }
-        function updateUI() {
-            scanCount.innerText = scanResults.length;
-            if (scanResults.length === 0) { scanList.innerHTML = '<div class="p-3 text-center text-muted">No data.</div>'; }
-            else {
-                var html = '';
-                for (var i = 0; i < scanResults.length; i++) {
-                    html += '<div class="scan-item"><span class="code" onclick="editScanResult(' + i + ')">' + scanResults[i] + '</span><button class="btn btn-outline-danger btn-sm" onclick="removeScanResult(' + i + ')">Del</button></div>';
-                }
-                scanList.innerHTML = html;
+                return paddedCanvas;
             }
-        }
-        function sendEmail() {
-            var to = document.getElementById('emailTo').value, sub = document.getElementById('emailSubject').value;
-            if (!to) { showError("Set email address"); return; }
-            if (scanResults.length === 0) { showError("No data"); return; }
-            window.location.href = 'mailto:' + to + '?subject=' + encodeURIComponent(sub) + '&body=' + encodeURIComponent(scanResults.join('\n'));
-        }
 
-        shutterBtn.addEventListener('click', captureAndRecognize);
-        document.getElementById('clearList').addEventListener('click', clearAll);
-        document.getElementById('saveSettings').addEventListener('click', saveSettings);
-        document.getElementById('sendEmail').addEventListener('click', sendEmail);
+            function postProcessText(text) {
+                var r = text.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
+                r = r.replace(/^(R|RC|INC|REC|GST)(?=[A-Z]?\d)/i, '');
+                r = r.replace(/^THNO/i, 'CHNO').replace(/^ITHNG/i, 'CHNO');
+                r = r.replace(/^AN0/i, 'NO.').replace(/^ANO/i, 'NO.');
+                // Common OCR mistakes
+                r = r.replace(/O(?=\d)/g, '0'); // O before digit -> 0
+                r = r.replace(/(?<=\d)O/g, '0'); // O after digit -> 0
+                r = r.replace(/I(?=\d)/g, '1'); // I before digit -> 1
+                r = r.replace(/(?<=\d)I/g, '1'); // I after digit -> 1
+                return r;
+            }
 
-        window.addEventListener('load', async function () { loadFromLocal(); await startCamera(); await initOCR(); });
+            async function captureAndRecognize() {
+                if (!isReady || isProcessing || !ocrReady) { if (!ocrReady) window.showError("OCR not ready"); return; }
+                isProcessing = true; shutterBtn.disabled = true; guideProcessing.classList.remove('d-none');
 
-        if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('./sw.js').catch(function (e) { }); }); }
+                var t0 = performance.now();
+                try {
+                    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+                    ctx.drawImage(video, 0, 0);
+                    var t1 = performance.now();
+
+                    var processed = preprocessImage(canvas);
+                    var t2 = performance.now();
+
+                    debugCanvas.width = processed.width;
+                    debugCanvas.height = processed.height;
+                    debugCtx.drawImage(processed, 0, 0);
+
+                    var result = await tessWorker.recognize(processed);
+                    var t3 = performance.now();
+
+                    var rawText = result.data.text || '';
+                    var text = postProcessText(rawText);
+                    var confidence = result.data.confidence || 0;
+
+                    timingInfo.textContent = 'Cap:' + (t1 - t0).toFixed(0) + 'ms Pre:' + (t2 - t1).toFixed(0) + 'ms OCR:' + (t3 - t2).toFixed(0) + 'ms Total:' + (t3 - t0).toFixed(0) + 'ms';
+                    debugInfo.textContent = 'Tesseract | Raw: ' + rawText.trim() + ' | Clean: ' + text + ' | Conf: ' + confidence.toFixed(0) + '%';
+
+                    if (text.length > 0 && confidence > 30) { showSuccess('Read: ' + text); addScanResult(text); }
+                    else { window.showError("Not recognized (conf: " + confidence.toFixed(0) + "%)"); }
+                } catch (e) { console.error(e); window.showError("OCR Error: " + e.message); }
+                finally { guideProcessing.classList.add('d-none'); shutterBtn.disabled = false; isProcessing = false; }
+            }
+
+            function saveToLocal() { try { localStorage.setItem('fieldScan_results', JSON.stringify(scanResults)); } catch (e) { } }
+            function loadFromLocal() {
+                try {
+                    var s = localStorage.getItem('fieldScan_results'); if (s) { scanResults = JSON.parse(s); updateUI(); }
+                    var e = localStorage.getItem('fieldScan_emailTo'); if (e) document.getElementById('emailTo').value = e;
+                    var es = localStorage.getItem('fieldScan_emailSubject'); if (es) document.getElementById('emailSubject').value = es;
+                    var p = localStorage.getItem('fieldScan_preventDuplicate'); if (p !== null) { preventDuplicate = p === 'true'; preventDuplicateCheckbox.checked = preventDuplicate; }
+                    var r = localStorage.getItem('fieldScan_rotation'); if (r !== null) { rotationAngle = parseInt(r) || 0; updateRotationDisplay(); }
+                    var c = localStorage.getItem('fieldScan_contrast'); if (c !== null) { contrastLevel = parseFloat(c); contrastSlider.value = contrastLevel; contrastValue.textContent = contrastLevel.toFixed(1); }
+                } catch (e) { }
+            }
+            function saveSettings() {
+                try {
+                    localStorage.setItem('fieldScan_emailTo', document.getElementById('emailTo').value);
+                    localStorage.setItem('fieldScan_emailSubject', document.getElementById('emailSubject').value);
+                    preventDuplicate = preventDuplicateCheckbox.checked;
+                    localStorage.setItem('fieldScan_preventDuplicate', preventDuplicate);
+                    localStorage.setItem('fieldScan_contrast', contrastLevel);
+                    showSuccess("Settings saved");
+                    bootstrap.Collapse.getInstance(document.getElementById('collapseSettings'))?.hide();
+                } catch (e) { window.showError("Save failed"); }
+            }
+            function addScanResult(code) {
+                if (preventDuplicate && scanResults.includes(code)) { window.showError("Duplicate: " + code); return; }
+                playBeep(); scanResults.unshift(code); saveToLocal(); updateUI();
+            }
+            window.removeScanResult = function (i) { scanResults.splice(i, 1); saveToLocal(); updateUI(); };
+            window.editScanResult = function (i) { showEditDialog(i); };
+            function clearAll() { showConfirmDialog("Clear all?", function () { scanResults = []; saveToLocal(); updateUI(); showSuccess("Cleared"); }); }
+            function updateUI() {
+                scanCount.innerText = scanResults.length;
+                if (scanResults.length === 0) { scanList.innerHTML = '<div class="p-3 text-center text-muted">No data.</div>'; }
+                else {
+                    var html = '';
+                    for (var i = 0; i < scanResults.length; i++) {
+                        html += '<div class="scan-item"><span class="code" onclick="editScanResult(' + i + ')">' + scanResults[i] + '</span><button class="btn btn-outline-danger btn-sm" onclick="removeScanResult(' + i + ')">Del</button></div>';
+                    }
+                    scanList.innerHTML = html;
+                }
+            }
+            function sendEmail() {
+                var to = document.getElementById('emailTo').value, sub = document.getElementById('emailSubject').value;
+                if (!to) { window.showError("Set email address"); return; }
+                if (scanResults.length === 0) { window.showError("No data"); return; }
+                window.location.href = 'mailto:' + to + '?subject=' + encodeURIComponent(sub) + '&body=' + encodeURIComponent(scanResults.join('\n'));
+            }
+
+            shutterBtn.addEventListener('click', captureAndRecognize);
+            document.getElementById('clearList').addEventListener('click', clearAll);
+            document.getElementById('saveSettings').addEventListener('click', saveSettings);
+            document.getElementById('sendEmail').addEventListener('click', sendEmail);
+
+            window.addEventListener('load', async function () {
+                loadFromLocal();
+                await startCamera();
+                await initTesseract();
+            });
+
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function () {
+                    navigator.serviceWorker.register('./sw.js').catch(function (e) { });
+                });
+            }
+        })();
     </script>
 </body>
 
