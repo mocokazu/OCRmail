@@ -12,13 +12,12 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --primary-color: #0d6efd;
             --bg-color: #1a1a1a;
             --text-color: #f8f9fa;
         }
 
         body {
-            font-family: 'Inter', 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
+            font-family: 'Inter', sans-serif;
             background-color: var(--bg-color);
             color: var(--text-color);
             padding-bottom: 140px;
@@ -194,10 +193,6 @@
             background: #444;
         }
 
-        .scan-item .code:active {
-            background: #555;
-        }
-
         .text-large {
             font-size: 1.1rem;
             font-weight: 600;
@@ -258,10 +253,6 @@
             box-shadow: none;
         }
 
-        .shutter-btn:disabled::after {
-            background: rgba(255, 255, 255, 0.1);
-        }
-
         .rotate-btn {
             width: 50px;
             height: 50px;
@@ -274,10 +265,6 @@
             display: flex;
             align-items: center;
             justify-content: center;
-        }
-
-        .rotate-btn:active {
-            background: #555;
         }
 
         .loading-overlay {
@@ -297,11 +284,6 @@
 
         .loading-overlay.d-none {
             display: none !important;
-        }
-
-        .spinner-border {
-            width: 3rem;
-            height: 3rem;
         }
 
         .accordion-button {
@@ -370,7 +352,6 @@
             z-index: 3000;
             text-align: center;
             max-width: 90%;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
         }
 
         .error-toast.d-none {
@@ -389,14 +370,14 @@
             z-index: 3000;
             font-size: 1.2rem;
             font-weight: bold;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
         }
 
         .success-toast.d-none {
             display: none !important;
         }
 
-        .confirm-dialog {
+        .confirm-dialog,
+        .edit-dialog {
             position: fixed;
             top: 0;
             left: 0;
@@ -409,11 +390,13 @@
             z-index: 4000;
         }
 
-        .confirm-dialog.d-none {
+        .confirm-dialog.d-none,
+        .edit-dialog.d-none {
             display: none !important;
         }
 
-        .confirm-content {
+        .confirm-content,
+        .edit-content {
             background: #333;
             padding: 2rem;
             border-radius: 12px;
@@ -421,15 +404,16 @@
             max-width: 80%;
         }
 
+        .edit-content {
+            width: 90%;
+            max-width: 400px;
+        }
+
         .confirm-buttons {
             margin-top: 1.5rem;
             display: flex;
             gap: 1rem;
             justify-content: center;
-        }
-
-        .confirm-buttons .btn {
-            min-width: 100px;
         }
 
         .debug-section {
@@ -455,32 +439,6 @@
             color: #888;
             font-size: 0.75rem;
             margin-top: 0.5rem;
-            word-break: break-all;
-        }
-
-        .edit-dialog {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.8);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 4000;
-        }
-
-        .edit-dialog.d-none {
-            display: none !important;
-        }
-
-        .edit-content {
-            background: #333;
-            padding: 2rem;
-            border-radius: 12px;
-            width: 90%;
-            max-width: 400px;
         }
 
         .edit-content input {
@@ -535,9 +493,7 @@
             <div class="corner-marker corner-tr"></div>
             <div class="corner-marker corner-bl"></div>
             <div class="corner-marker corner-br"></div>
-            <div class="guide-processing d-none" id="guideProcessing">
-                <span>解析中...</span>
-            </div>
+            <div class="guide-processing d-none" id="guideProcessing"><span>解析中...</span></div>
         </div>
         <div class="guide-text">枠内に番号を合わせてください</div>
         <div class="counter-badge"><span id="scanCount">0</span> 件</div>
@@ -558,9 +514,7 @@
             <div class="accordion-item border-0">
                 <h2 class="accordion-header">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
-                        data-bs-target="#collapseSettings">
-                        ⚙️ 設定
-                    </button>
+                        data-bs-target="#collapseSettings">⚙️ 設定</button>
                 </h2>
                 <div id="collapseSettings" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
                     <div class="accordion-body">
@@ -576,6 +530,15 @@
                         <div class="mb-3 form-check form-switch">
                             <input class="form-check-input" type="checkbox" role="switch" id="preventDuplicate" checked>
                             <label class="form-check-label text-white" for="preventDuplicate">重複読み取り防止</label>
+                        </div>
+                        <hr class="border-secondary">
+                        <div class="mb-3">
+                            <label for="contrastSlider" class="form-label">コントラスト調整: <span
+                                    id="contrastValue">1.4</span></label>
+                            <input type="range" class="form-range" id="contrastSlider" min="1.0" max="2.5" step="0.1"
+                                value="1.4">
+                            <div class="d-flex justify-content-between text-muted" style="font-size: 0.75rem;">
+                                <span>弱</span><span>強</span></div>
                         </div>
                         <button class="btn btn-primary w-100 btn-lg" id="saveSettings">設定を保存</button>
                     </div>
@@ -603,13 +566,12 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script type="module">
-        // v32: TrOCRのみモード（Tesseract削除でメモリ安定化）
         import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3';
-
         env.allowLocalModels = false;
 
         let scanResults = [];
         let preventDuplicate = true;
+        let contrastLevel = 1.4;
         let stream = null;
         let isReady = false;
         let isProcessing = false;
@@ -634,13 +596,9 @@
         const rotationBadge = document.getElementById('rotationBadge');
         const modelBadge = document.getElementById('modelBadge');
         const shutterBtn = document.getElementById('shutterBtn');
-        const rotateBtn = document.getElementById('rotateBtn');
-        const rotateBtnCCW = document.getElementById('rotateBtnCCW');
         const scanList = document.getElementById('scanList');
         const scanCount = document.getElementById('scanCount');
         const preventDuplicateCheckbox = document.getElementById('preventDuplicate');
-        const loadingOverlay = document.getElementById('loadingOverlay');
-        const loadingText = document.getElementById('loadingText');
         const errorToast = document.getElementById('errorToast');
         const errorText = document.getElementById('errorText');
         const successToast = document.getElementById('successToast');
@@ -648,11 +606,11 @@
         const confirmText = document.getElementById('confirmText');
         const editDialog = document.getElementById('editDialog');
         const editInput = document.getElementById('editInput');
+        const contrastSlider = document.getElementById('contrastSlider');
+        const contrastValue = document.getElementById('contrastValue');
 
         let audioCtx = null;
-        function initAudio() {
-            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
+        function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
         function playBeep() {
             try {
                 if (!audioCtx) initAudio();
@@ -669,411 +627,176 @@
             } catch (e) { console.warn("Audio error:", e); }
         }
 
-        window.showError = function (msg) {
-            errorText.textContent = msg;
-            errorToast.classList.remove('d-none');
-        };
-        window.hideError = function () {
-            errorToast.classList.add('d-none');
-        };
-        function showSuccess(msg) {
-            successToast.textContent = msg;
-            successToast.classList.remove('d-none');
-            setTimeout(() => successToast.classList.add('d-none'), 1500);
-        }
-        function showConfirmDialog(msg, onConfirm) {
-            confirmText.textContent = msg;
-            confirmCallback = onConfirm;
-            confirmDialog.classList.remove('d-none');
-        }
-        function hideConfirmDialog() {
-            confirmDialog.classList.add('d-none');
-            confirmCallback = null;
-        }
+        window.showError = function (msg) { errorText.textContent = msg; errorToast.classList.remove('d-none'); };
+        window.hideError = function () { errorToast.classList.add('d-none'); };
+        function showSuccess(msg) { successToast.textContent = msg; successToast.classList.remove('d-none'); setTimeout(() => successToast.classList.add('d-none'), 1500); }
+        function showConfirmDialog(msg, onConfirm) { confirmText.textContent = msg; confirmCallback = onConfirm; confirmDialog.classList.remove('d-none'); }
+        function hideConfirmDialog() { confirmDialog.classList.add('d-none'); confirmCallback = null; }
+        function showEditDialog(index) { editIndex = index; editInput.value = scanResults[index]; editDialog.classList.remove('d-none'); editInput.focus(); editInput.select(); }
+        function hideEditDialog() { editDialog.classList.add('d-none'); editIndex = -1; }
+        function saveEdit() { if (editIndex >= 0 && editInput.value.trim()) { scanResults[editIndex] = editInput.value.trim().toUpperCase(); saveToLocal(); updateUI(); showSuccess('修正しました'); } hideEditDialog(); }
 
-        function showEditDialog(index) {
-            editIndex = index;
-            editInput.value = scanResults[index];
-            editDialog.classList.remove('d-none');
-            editInput.focus();
-            editInput.select();
-        }
-        function hideEditDialog() {
-            editDialog.classList.add('d-none');
-            editIndex = -1;
-        }
-        function saveEdit() {
-            if (editIndex >= 0 && editInput.value.trim()) {
-                scanResults[editIndex] = editInput.value.trim().toUpperCase();
-                saveToLocal();
-                updateUI();
-                showSuccess('修正しました');
-            }
-            hideEditDialog();
-        }
-
-        document.getElementById('confirmOk').addEventListener('click', () => {
-            if (confirmCallback) confirmCallback();
-            hideConfirmDialog();
-        });
+        document.getElementById('confirmOk').addEventListener('click', () => { if (confirmCallback) confirmCallback(); hideConfirmDialog(); });
         document.getElementById('confirmCancel').addEventListener('click', hideConfirmDialog);
         document.getElementById('editSave').addEventListener('click', saveEdit);
         document.getElementById('editCancel').addEventListener('click', hideEditDialog);
-        editInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') saveEdit();
-            if (e.key === 'Escape') hideEditDialog();
-        });
+        editInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') hideEditDialog(); });
 
-        rotateBtn.addEventListener('click', () => {
-            rotationAngle = (rotationAngle + 90) % 360;
-            updateRotationDisplay();
-            localStorage.setItem('fieldScan_rotation', rotationAngle);
-        });
+        document.getElementById('rotateBtn').addEventListener('click', () => { rotationAngle = (rotationAngle + 90) % 360; updateRotationDisplay(); localStorage.setItem('fieldScan_rotation', rotationAngle); });
+        document.getElementById('rotateBtnCCW').addEventListener('click', () => { rotationAngle = (rotationAngle - 90 + 360) % 360; updateRotationDisplay(); localStorage.setItem('fieldScan_rotation', rotationAngle); });
 
-        rotateBtnCCW.addEventListener('click', () => {
-            rotationAngle = (rotationAngle - 90 + 360) % 360;
-            updateRotationDisplay();
-            localStorage.setItem('fieldScan_rotation', rotationAngle);
-        });
+        contrastSlider.addEventListener('input', () => { contrastLevel = parseFloat(contrastSlider.value); contrastValue.textContent = contrastLevel.toFixed(1); });
 
-        function updateRotationDisplay() {
-            rotationBadge.textContent = `回転: ${rotationAngle}°`;
-            debugRotation.textContent = ` (${rotationAngle}°)`;
-        }
+        function updateRotationDisplay() { rotationBadge.textContent = `回転: ${rotationAngle}°`; debugRotation.textContent = ` (${rotationAngle}°)`; }
 
-        // TrOCRのみ初期化（Tesseract削除）
         async function initOCR() {
             modelBadge.textContent = 'AI読込中...';
             modelBadge.style.background = 'rgba(255,165,0,0.9)';
-
             try {
-                // WebGPU + q4量子化を優先
                 ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
-                    dtype: 'q4',
-                    device: 'webgpu',
-                    progress_callback: (progress) => {
-                        if (progress.status === 'downloading') {
-                            const pct = Math.round((progress.loaded / progress.total) * 100);
-                            modelBadge.textContent = `DL: ${pct}%`;
-                        }
-                    }
+                    dtype: 'q4', device: 'webgpu',
+                    progress_callback: (p) => { if (p.status === 'downloading') { modelBadge.textContent = `DL: ${Math.round((p.loaded / p.total) * 100)}%`; } }
                 });
                 ocrReady = true;
                 modelBadge.textContent = 'TrOCR (q4)';
                 modelBadge.style.background = 'rgba(0,200,100,0.9)';
-                console.log('TrOCR initialized (WebGPU/q4)');
             } catch (err) {
-                console.warn('WebGPU failed, trying WASM:', err);
                 try {
-                    // WASMフォールバック
-                    ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
-                        dtype: 'q8',
-                        device: 'wasm'
-                    });
+                    ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', { dtype: 'q8', device: 'wasm' });
                     ocrReady = true;
                     modelBadge.textContent = 'TrOCR (CPU)';
                     modelBadge.style.background = 'rgba(0,150,150,0.9)';
-                    console.log('TrOCR initialized (WASM/q8)');
-                } catch (retryErr) {
-                    console.error('TrOCR init failed:', retryErr);
-                    modelBadge.textContent = 'エラー';
-                    modelBadge.style.background = 'rgba(220,53,69,0.9)';
-                    showError('OCRの初期化に失敗しました。ページを再読込してください。');
-                }
+                } catch (e) { modelBadge.textContent = 'エラー'; modelBadge.style.background = 'rgba(220,53,69,0.9)'; showError('OCR初期化失敗'); }
             }
         }
 
         async function startCamera() {
             try {
                 initAudio();
-                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                    showError("カメラ非対応のブラウザです");
-                    return;
-                }
-
-                if (stream && stream.active) return;
-
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
-                });
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } });
                 video.srcObject = stream;
-                video.onloadedmetadata = () => {
-                    isReady = true;
-                    shutterBtn.disabled = false;
-                };
-            } catch (err) {
-                let msg = "カメラ起動失敗: ";
-                if (err.name === 'NotAllowedError') msg += "カメラ権限を許可してください";
-                else if (err.name === 'NotFoundError') msg += "カメラが見つかりません";
-                else msg += err.message;
-                showError(msg);
-            }
+                video.onloadedmetadata = () => { isReady = true; shutterBtn.disabled = false; };
+            } catch (e) { showError("カメラ起動失敗: " + e.message); }
         }
 
         function calculateCropRegion() {
-            const containerW = cameraContainer.clientWidth;
-            const containerH = cameraContainer.clientHeight;
-            const videoW = video.videoWidth;
-            const videoH = video.videoHeight;
-
-            const containerRatio = containerW / containerH;
-            const videoRatio = videoW / videoH;
-
-            let visibleW, visibleH, offsetX, offsetY;
-
-            if (videoRatio > containerRatio) {
-                visibleH = videoH;
-                visibleW = containerRatio * videoH;
-                offsetX = (videoW - visibleW) / 2;
-                offsetY = 0;
-            } else {
-                visibleW = videoW;
-                visibleH = videoW / containerRatio;
-                offsetX = 0;
-                offsetY = (videoH - visibleH) / 2;
-            }
-
-            const guideRect = guideFrame.getBoundingClientRect();
-            const containerRect = cameraContainer.getBoundingClientRect();
-
-            const guideRelX = (guideRect.left - containerRect.left) / containerW;
-            const guideRelY = (guideRect.top - containerRect.top) / containerH;
-            const guideRelW = guideRect.width / containerW;
-            const guideRelH = guideRect.height / containerH;
-
-            const cropX = offsetX + guideRelX * visibleW;
-            const cropY = offsetY + guideRelY * visibleH;
-            const cropW = guideRelW * visibleW;
-            const cropH = guideRelH * visibleH;
-
-            return { x: Math.floor(cropX), y: Math.floor(cropY), w: Math.floor(cropW), h: Math.floor(cropH) };
+            const cW = cameraContainer.clientWidth, cH = cameraContainer.clientHeight;
+            const vW = video.videoWidth, vH = video.videoHeight;
+            const cRatio = cW / cH, vRatio = vW / vH;
+            let visW, visH, offX, offY;
+            if (vRatio > cRatio) { visH = vH; visW = cRatio * vH; offX = (vW - visW) / 2; offY = 0; }
+            else { visW = vW; visH = vW / cRatio; offX = 0; offY = (vH - visH) / 2; }
+            const gRect = guideFrame.getBoundingClientRect(), cRect = cameraContainer.getBoundingClientRect();
+            const gRelX = (gRect.left - cRect.left) / cW, gRelY = (gRect.top - cRect.top) / cH;
+            const gRelW = gRect.width / cW, gRelH = gRect.height / cH;
+            return { x: Math.floor(offX + gRelX * visW), y: Math.floor(offY + gRelY * visH), w: Math.floor(gRelW * visW), h: Math.floor(gRelH * visH) };
         }
 
         function preprocessImage(src) {
             const crop = calculateCropRegion();
-            const srcW = src.width;
-            const srcH = src.height;
-
-            let actualCrop = { ...crop };
-
-            if (rotationAngle === 90) {
-                actualCrop = { x: crop.y, y: srcH - crop.x - crop.w, w: crop.h, h: crop.w };
-            } else if (rotationAngle === 180) {
-                actualCrop = { x: srcW - crop.x - crop.w, y: srcH - crop.y - crop.h, w: crop.w, h: crop.h };
-            } else if (rotationAngle === 270) {
-                actualCrop = { x: srcW - crop.y - crop.h, y: crop.x, w: crop.h, h: crop.w };
-            }
-
-            actualCrop.x = Math.max(0, Math.min(actualCrop.x, srcW - 1));
-            actualCrop.y = Math.max(0, Math.min(actualCrop.y, srcH - 1));
-            actualCrop.w = Math.min(actualCrop.w, srcW - actualCrop.x);
-            actualCrop.h = Math.min(actualCrop.h, srcH - actualCrop.y);
-
-            const targetWidth = 512;
-            const scale = targetWidth / actualCrop.w;
-            const targetHeight = Math.floor(actualCrop.h * scale);
-
-            processCanvas.width = targetWidth;
-            processCanvas.height = targetHeight;
-
+            const sW = src.width, sH = src.height;
+            let aC = { ...crop };
+            if (rotationAngle === 90) aC = { x: crop.y, y: sH - crop.x - crop.w, w: crop.h, h: crop.w };
+            else if (rotationAngle === 180) aC = { x: sW - crop.x - crop.w, y: sH - crop.y - crop.h, w: crop.w, h: crop.h };
+            else if (rotationAngle === 270) aC = { x: sW - crop.y - crop.h, y: crop.x, w: crop.h, h: crop.w };
+            aC.x = Math.max(0, Math.min(aC.x, sW - 1)); aC.y = Math.max(0, Math.min(aC.y, sH - 1));
+            aC.w = Math.min(aC.w, sW - aC.x); aC.h = Math.min(aC.h, sH - aC.y);
+            const tW = 512, scale = tW / aC.w, tH = Math.floor(aC.h * scale);
+            processCanvas.width = tW; processCanvas.height = tH;
             processCtx.save();
-
             if (rotationAngle !== 0) {
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = actualCrop.w;
-                tempCanvas.height = actualCrop.h;
-                const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
-                tempCtx.drawImage(src, actualCrop.x, actualCrop.y, actualCrop.w, actualCrop.h, 0, 0, actualCrop.w, actualCrop.h);
-
-                if (rotationAngle === 90 || rotationAngle === 270) {
-                    processCanvas.width = targetHeight;
-                    processCanvas.height = targetWidth;
-                }
-
+                const tmp = document.createElement('canvas'); tmp.width = aC.w; tmp.height = aC.h;
+                tmp.getContext('2d').drawImage(src, aC.x, aC.y, aC.w, aC.h, 0, 0, aC.w, aC.h);
+                if (rotationAngle === 90 || rotationAngle === 270) { processCanvas.width = tH; processCanvas.height = tW; }
                 processCtx.translate(processCanvas.width / 2, processCanvas.height / 2);
                 processCtx.rotate(rotationAngle * Math.PI / 180);
-                processCtx.drawImage(tempCanvas, -actualCrop.w * scale / 2, -actualCrop.h * scale / 2, actualCrop.w * scale, actualCrop.h * scale);
-            } else {
-                processCtx.drawImage(src, actualCrop.x, actualCrop.y, actualCrop.w, actualCrop.h, 0, 0, targetWidth, targetHeight);
-            }
-
+                processCtx.drawImage(tmp, -aC.w * scale / 2, -aC.h * scale / 2, aC.w * scale, aC.h * scale);
+            } else { processCtx.drawImage(src, aC.x, aC.y, aC.w, aC.h, 0, 0, tW, tH); }
             processCtx.restore();
-
-            // TrOCR用: グレースケール + コントラスト強調（二値化なし）
-            const w = processCanvas.width;
-            const h = processCanvas.height;
-            const imageData = processCtx.getImageData(0, 0, w, h);
-            const d = imageData.data;
-
+            const w = processCanvas.width, h = processCanvas.height;
+            const imgData = processCtx.getImageData(0, 0, w, h);
+            const d = imgData.data;
             for (let i = 0; i < d.length; i += 4) {
                 let gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-                // コントラスト強調 1.4倍
-                gray = ((gray - 128) * 1.4) + 128;
+                gray = ((gray - 128) * contrastLevel) + 128;
                 gray = Math.max(0, Math.min(255, gray));
                 d[i] = d[i + 1] = d[i + 2] = gray;
             }
-            processCtx.putImageData(imageData, 0, 0);
-
+            processCtx.putImageData(imgData, 0, 0);
             return processCanvas;
         }
 
         function postProcessText(text) {
-            let result = text;
-            // 記号除去
-            result = result.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
-            // TrOCR先頭幻覚除去
-            result = result.replace(/^(R|RC|INC|REC|GST)(?=[A-Z]?\d)/i, '');
-            // 既知の誤読パターン補正
-            result = result.replace(/^THNO/i, 'CHNO');
-            result = result.replace(/^ITHNG/i, 'CHNO');
-            result = result.replace(/^AN0/i, 'NO.');
-            result = result.replace(/^ANO/i, 'NO.');
-            return result;
+            let r = text.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
+            r = r.replace(/^(R|RC|INC|REC|GST)(?=[A-Z]?\d)/i, '');
+            r = r.replace(/^THNO/i, 'CHNO').replace(/^ITHNG/i, 'CHNO');
+            r = r.replace(/^AN0/i, 'NO.').replace(/^ANO/i, 'NO.');
+            return r;
         }
 
         async function captureAndRecognize() {
-            if (!isReady || isProcessing || !ocrReady) {
-                if (!ocrReady) showError("OCRの準備ができていません。少々お待ちください。");
-                return;
-            }
-
-            isProcessing = true;
-            shutterBtn.disabled = true;
-            guideProcessing.classList.remove('d-none');
-
+            if (!isReady || isProcessing || !ocrReady) { if (!ocrReady) showError("OCR準備中..."); return; }
+            isProcessing = true; shutterBtn.disabled = true; guideProcessing.classList.remove('d-none');
             try {
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
+                canvas.width = video.videoWidth; canvas.height = video.videoHeight;
                 ctx.drawImage(video, 0, 0);
-
                 const processed = preprocessImage(canvas);
-
-                // パディング追加（左40px + 右80px）
-                const padL = 40;
-                const padR = 80;
-                const paddedCanvas = document.createElement('canvas');
-                paddedCanvas.width = processed.width + padL + padR;
-                paddedCanvas.height = processed.height;
-                const paddedCtx = paddedCanvas.getContext('2d');
-                paddedCtx.fillStyle = '#FFFFFF';
-                paddedCtx.fillRect(0, 0, paddedCanvas.width, paddedCanvas.height);
-                paddedCtx.drawImage(processed, padL, 0);
-
-                debugCanvas.width = paddedCanvas.width;
-                debugCanvas.height = paddedCanvas.height;
-                debugCtx.drawImage(paddedCanvas, 0, 0);
-
-                // TrOCR実行
-                const result = await ocrPipeline(paddedCanvas);
-                let text = result[0]?.generated_text || '';
-                text = postProcessText(text);
-
-                debugInfo.textContent = `TrOCR | ${text}`;
-
-                if (text.length > 0) {
-                    showSuccess(`読取: ${text}`);
-                    addScanResult(text);
-                } else {
-                    showError("認識できませんでした。文字を枠内に大きく入れてください。");
-                }
-            } catch (err) {
-                console.error("OCR Error:", err);
-                showError("OCRエラー: 再度お試しください");
-            } finally {
-                guideProcessing.classList.add('d-none');
-                shutterBtn.disabled = false;
-                isProcessing = false;
-            }
+                const padL = 40, padR = 80;
+                const padded = document.createElement('canvas');
+                padded.width = processed.width + padL + padR; padded.height = processed.height;
+                const pCtx = padded.getContext('2d');
+                pCtx.fillStyle = '#FFFFFF'; pCtx.fillRect(0, 0, padded.width, padded.height);
+                pCtx.drawImage(processed, padL, 0);
+                debugCanvas.width = padded.width; debugCanvas.height = padded.height;
+                debugCtx.drawImage(padded, 0, 0);
+                const result = await ocrPipeline(padded);
+                let text = postProcessText(result[0]?.generated_text || '');
+                debugInfo.textContent = `TrOCR | ${text} | コントラスト: ${contrastLevel}`;
+                if (text.length > 0) { showSuccess(`読取: ${text}`); addScanResult(text); }
+                else { showError("認識できませんでした"); }
+            } catch (e) { console.error(e); showError("OCRエラー"); }
+            finally { guideProcessing.classList.add('d-none'); shutterBtn.disabled = false; isProcessing = false; }
         }
 
-        function saveToLocal() {
-            try { localStorage.setItem('fieldScan_results', JSON.stringify(scanResults)); }
-            catch (e) { console.error('Failed to save:', e); }
-        }
-
+        function saveToLocal() { try { localStorage.setItem('fieldScan_results', JSON.stringify(scanResults)); } catch (e) { } }
         function loadFromLocal() {
             try {
-                const saved = localStorage.getItem('fieldScan_results');
-                if (saved) { scanResults = JSON.parse(saved); updateUI(); }
-                const emailTo = localStorage.getItem('fieldScan_emailTo');
-                const emailSubject = localStorage.getItem('fieldScan_emailSubject');
-                const savedPrev = localStorage.getItem('fieldScan_preventDuplicate');
-                const savedRotation = localStorage.getItem('fieldScan_rotation');
-                if (emailTo) document.getElementById('emailTo').value = emailTo;
-                if (emailSubject) document.getElementById('emailSubject').value = emailSubject;
-                if (savedPrev !== null) {
-                    preventDuplicate = savedPrev === 'true';
-                    preventDuplicateCheckbox.checked = preventDuplicate;
-                }
-                if (savedRotation !== null) {
-                    rotationAngle = parseInt(savedRotation) || 0;
-                    updateRotationDisplay();
-                }
-            } catch (e) { console.error('Failed to load:', e); }
+                const s = localStorage.getItem('fieldScan_results'); if (s) { scanResults = JSON.parse(s); updateUI(); }
+                const e = localStorage.getItem('fieldScan_emailTo'); if (e) document.getElementById('emailTo').value = e;
+                const es = localStorage.getItem('fieldScan_emailSubject'); if (es) document.getElementById('emailSubject').value = es;
+                const p = localStorage.getItem('fieldScan_preventDuplicate'); if (p !== null) { preventDuplicate = p === 'true'; preventDuplicateCheckbox.checked = preventDuplicate; }
+                const r = localStorage.getItem('fieldScan_rotation'); if (r !== null) { rotationAngle = parseInt(r) || 0; updateRotationDisplay(); }
+                const c = localStorage.getItem('fieldScan_contrast'); if (c !== null) { contrastLevel = parseFloat(c); contrastSlider.value = contrastLevel; contrastValue.textContent = contrastLevel.toFixed(1); }
+            } catch (e) { }
         }
-
         function saveSettings() {
             try {
                 localStorage.setItem('fieldScan_emailTo', document.getElementById('emailTo').value);
                 localStorage.setItem('fieldScan_emailSubject', document.getElementById('emailSubject').value);
                 preventDuplicate = preventDuplicateCheckbox.checked;
                 localStorage.setItem('fieldScan_preventDuplicate', preventDuplicate);
+                localStorage.setItem('fieldScan_contrast', contrastLevel);
                 showSuccess("設定を保存しました");
                 bootstrap.Collapse.getInstance(document.getElementById('collapseSettings'))?.hide();
-            } catch (e) { showError("設定の保存に失敗しました"); }
+            } catch (e) { showError("保存失敗"); }
         }
-
         function addScanResult(code) {
-            if (preventDuplicate && scanResults.includes(code)) {
-                showError("重複: " + code);
-                return;
-            }
-            playBeep();
-            scanResults.unshift(code);
-            saveToLocal();
-            updateUI();
+            if (preventDuplicate && scanResults.includes(code)) { showError("重複: " + code); return; }
+            playBeep(); scanResults.unshift(code); saveToLocal(); updateUI();
         }
-
-        window.removeScanResult = function (index) {
-            scanResults.splice(index, 1);
-            saveToLocal();
-            updateUI();
-        };
-
-        window.editScanResult = function (index) {
-            showEditDialog(index);
-        };
-
-        function clearAll() {
-            showConfirmDialog("リストをすべて削除しますか？", () => {
-                scanResults = [];
-                saveToLocal();
-                updateUI();
-                showSuccess("削除しました");
-            });
-        }
-
+        window.removeScanResult = function (i) { scanResults.splice(i, 1); saveToLocal(); updateUI(); };
+        window.editScanResult = function (i) { showEditDialog(i); };
+        function clearAll() { showConfirmDialog("リストをすべて削除しますか？", () => { scanResults = []; saveToLocal(); updateUI(); showSuccess("削除しました"); }); }
         function updateUI() {
             scanCount.innerText = scanResults.length;
-            if (scanResults.length === 0) {
-                scanList.innerHTML = '<div class="p-3 text-center text-muted">データがありません。</div>';
-            } else {
-                scanList.innerHTML = scanResults.map((code, i) => `
-                    <div class="scan-item">
-                        <span class="code" onclick="editScanResult(${i})" title="タップして編集">${code}</span>
-                        <button class="btn btn-outline-danger btn-sm" onclick="removeScanResult(${i})">削除</button>
-                    </div>
-                `).join('');
-            }
+            if (scanResults.length === 0) { scanList.innerHTML = '<div class="p-3 text-center text-muted">データがありません。</div>'; }
+            else { scanList.innerHTML = scanResults.map((c, i) => `<div class="scan-item"><span class="code" onclick="editScanResult(${i})">${c}</span><button class="btn btn-outline-danger btn-sm" onclick="removeScanResult(${i})">削除</button></div>`).join(''); }
         }
-
         function sendEmail() {
-            const to = document.getElementById('emailTo').value;
-            const subject = document.getElementById('emailSubject').value;
-            if (!to) { showError("送信先メールアドレスを設定してください"); return; }
+            const to = document.getElementById('emailTo').value, sub = document.getElementById('emailSubject').value;
+            if (!to) { showError("送信先を設定してください"); return; }
             if (scanResults.length === 0) { showError("データがありません"); return; }
-            const body = scanResults.join('\n');
-            window.location.href = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            window.location.href = `mailto:${to}?subject=${encodeURIComponent(sub)}&body=${encodeURIComponent(scanResults.join('\n'))}`;
         }
 
         shutterBtn.addEventListener('click', captureAndRecognize);
@@ -1081,17 +804,9 @@
         document.getElementById('saveSettings').addEventListener('click', saveSettings);
         document.getElementById('sendEmail').addEventListener('click', sendEmail);
 
-        window.addEventListener('load', async () => {
-            loadFromLocal();
-            await startCamera();
-            await initOCR();
-        });
+        window.addEventListener('load', async () => { loadFromLocal(); await startCamera(); await initOCR(); });
 
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js').catch(e => console.log('SW fail:', e));
-            });
-        }
+        if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(e => { }); }); }
     </script>
 </body>
 
