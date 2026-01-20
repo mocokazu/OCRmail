@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>現場スキャンWeb - OCR</title>
+    <title>現場スキャンWeb - OCR v30</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" href="icons/icon-192.png">
     <meta name="theme-color" content="#212529">
@@ -107,6 +107,18 @@
             font-family: monospace;
             font-weight: bold;
             letter-spacing: 2px;
+            cursor: pointer;
+            padding: 0.3rem 0.5rem;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .scan-item .code:hover {
+            background: #444;
+        }
+
+        .scan-item .code:active {
+            background: #555;
         }
 
         .text-large {
@@ -352,6 +364,62 @@
             margin-top: 0.5rem;
             word-break: break-all;
         }
+
+        /* 編集ダイアログ */
+        .edit-dialog {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 4000;
+        }
+
+        .edit-dialog.d-none {
+            display: none !important;
+        }
+
+        .edit-content {
+            background: #333;
+            padding: 2rem;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 400px;
+        }
+
+        .edit-content input {
+            font-size: 1.5rem;
+            font-family: monospace;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        /* 軽量モードバッジ */
+        .lightweight-badge {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(255, 100, 0, 0.9);
+            color: white;
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+
+        .lightweight-badge.d-none {
+            display: none !important;
+        }
+
+        .mode-hint {
+            font-size: 0.75rem;
+            color: #888;
+            margin-top: 0.25rem;
+        }
     </style>
 </head>
 
@@ -378,7 +446,19 @@
         </div>
     </div>
 
-    <div class="header">現場スキャンWeb</div>
+    <!-- 編集ダイアログ（新規） -->
+    <div class="edit-dialog d-none" id="editDialog">
+        <div class="edit-content">
+            <h5 class="text-white mb-3">読み取り結果を修正</h5>
+            <input type="text" class="form-control form-control-lg mb-3" id="editInput" placeholder="番号を入力">
+            <div class="d-flex gap-2">
+                <button class="btn btn-secondary flex-fill" id="editCancel">キャンセル</button>
+                <button class="btn btn-primary flex-fill" id="editSave">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="header">現場スキャンWeb v30</div>
 
     <div id="cameraContainer">
         <video id="video" autoplay playsinline muted></video>
@@ -387,6 +467,7 @@
         <div class="counter-badge"><span id="scanCount">0</span> 件</div>
         <div class="rotation-badge" id="rotationBadge">回転: 0°</div>
         <div class="model-badge" id="modelBadge">準備中...</div>
+        <div class="lightweight-badge d-none" id="lightweightBadge">軽量</div>
     </div>
     <canvas id="canvas"></canvas>
     <canvas id="processCanvas"></canvas>
@@ -421,6 +502,14 @@
                             <input class="form-check-input" type="checkbox" role="switch" id="preventDuplicate" checked>
                             <label class="form-check-label text-white" for="preventDuplicate">重複読み取り防止</label>
                         </div>
+                        <hr class="border-secondary">
+                        <div class="mb-3 form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="lightweightMode">
+                            <label class="form-check-label text-white" for="lightweightMode">
+                                🚀 軽量モード（安定性重視）
+                            </label>
+                            <div class="mode-hint">ONにするとメモリ使用量が大幅に減り、動作が安定します</div>
+                        </div>
                         <button class="btn btn-primary w-100 btn-lg" id="saveSettings">設定を保存</button>
                     </div>
                 </div>
@@ -428,7 +517,7 @@
         </div>
 
         <div class="d-flex justify-content-between align-items-center mb-2">
-            <span class="text-large">読み取りリスト</span>
+            <span class="text-large">読み取りリスト <small class="text-muted">(タップで編集)</small></span>
             <button class="btn btn-outline-danger btn-sm" id="clearList">全削除</button>
         </div>
         <div class="scan-list" id="scanList">
@@ -454,6 +543,7 @@
 
         let scanResults = [];
         let preventDuplicate = true;
+        let lightweightMode = false;
         let stream = null;
         let isReady = false;
         let isProcessing = false;
@@ -463,6 +553,7 @@
         let ocrReady = false;
         let useFallback = false;
         let tesseractWorker = null;
+        let editIndex = -1;
 
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
@@ -477,12 +568,14 @@
         const cameraContainer = document.getElementById('cameraContainer');
         const rotationBadge = document.getElementById('rotationBadge');
         const modelBadge = document.getElementById('modelBadge');
+        const lightweightBadge = document.getElementById('lightweightBadge');
         const shutterBtn = document.getElementById('shutterBtn');
         const rotateBtn = document.getElementById('rotateBtn');
         const rotateBtnCCW = document.getElementById('rotateBtnCCW');
         const scanList = document.getElementById('scanList');
         const scanCount = document.getElementById('scanCount');
         const preventDuplicateCheckbox = document.getElementById('preventDuplicate');
+        const lightweightModeCheckbox = document.getElementById('lightweightMode');
         const loadingOverlay = document.getElementById('loadingOverlay');
         const loadingText = document.getElementById('loadingText');
         const errorToast = document.getElementById('errorToast');
@@ -490,6 +583,8 @@
         const successToast = document.getElementById('successToast');
         const confirmDialog = document.getElementById('confirmDialog');
         const confirmText = document.getElementById('confirmText');
+        const editDialog = document.getElementById('editDialog');
+        const editInput = document.getElementById('editInput');
 
         let audioCtx = null;
         function initAudio() {
@@ -533,11 +628,39 @@
             confirmCallback = null;
         }
 
+        // 編集ダイアログ
+        function showEditDialog(index) {
+            editIndex = index;
+            editInput.value = scanResults[index];
+            editDialog.classList.remove('d-none');
+            editInput.focus();
+            editInput.select();
+        }
+        function hideEditDialog() {
+            editDialog.classList.add('d-none');
+            editIndex = -1;
+        }
+        function saveEdit() {
+            if (editIndex >= 0 && editInput.value.trim()) {
+                scanResults[editIndex] = editInput.value.trim().toUpperCase();
+                saveToLocal();
+                updateUI();
+                showSuccess('修正しました');
+            }
+            hideEditDialog();
+        }
+
         document.getElementById('confirmOk').addEventListener('click', () => {
             if (confirmCallback) confirmCallback();
             hideConfirmDialog();
         });
         document.getElementById('confirmCancel').addEventListener('click', hideConfirmDialog);
+        document.getElementById('editSave').addEventListener('click', saveEdit);
+        document.getElementById('editCancel').addEventListener('click', hideEditDialog);
+        editInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') saveEdit();
+            if (e.key === 'Escape') hideEditDialog();
+        });
 
         rotateBtn.addEventListener('click', () => {
             rotationAngle = (rotationAngle + 90) % 360;
@@ -554,6 +677,16 @@
         function updateRotationDisplay() {
             rotationBadge.textContent = `回転: ${rotationAngle}°`;
             debugRotation.textContent = ` (${rotationAngle}°)`;
+        }
+
+        function updateLightweightDisplay() {
+            if (lightweightMode) {
+                lightweightBadge.classList.remove('d-none');
+                modelBadge.textContent = 'Tesseract';
+                modelBadge.style.background = 'rgba(255,100,0,0.9)';
+            } else {
+                lightweightBadge.classList.add('d-none');
+            }
         }
 
         async function initTesseractWorker() {
@@ -574,7 +707,18 @@
             modelBadge.textContent = 'AI読込中...';
             modelBadge.style.background = 'rgba(255,165,0,0.9)';
 
-            initTesseractWorker().catch(e => console.error("Tesseract init failed:", e));
+            // Tesseract初期化（常に）
+            await initTesseractWorker().catch(e => console.error("Tesseract init failed:", e));
+
+            // 軽量モードの場合はTrOCRをスキップ
+            if (lightweightMode) {
+                ocrReady = true;
+                useFallback = true;
+                modelBadge.textContent = 'Tesseract';
+                modelBadge.style.background = 'rgba(255,100,0,0.9)';
+                console.log('Lightweight mode - Tesseract only');
+                return;
+            }
 
             try {
                 ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
@@ -745,14 +889,13 @@
             return processCanvas;
         }
 
-        // シンプルな画像処置（彩度抽出削除版）
         function enhanceImage(canvas, ctx, forTesseract = false) {
             const w = canvas.width;
             const h = canvas.height;
             const imageData = ctx.getImageData(0, 0, w, h);
             const d = imageData.data;
 
-            // グレースケール変換のみ
+            // グレースケール変換
             for (let i = 0; i < d.length; i += 4) {
                 const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
                 d[i] = d[i + 1] = d[i + 2] = gray;
@@ -768,7 +911,7 @@
                     d[i] = d[i + 1] = d[i + 2] = v;
                 }
 
-                // OTSU二値化（シンプル版）
+                // OTSU二値化
                 const histogram = new Array(256).fill(0);
                 for (let i = 0; i < d.length; i += 4) {
                     histogram[Math.round(d[i])]++;
@@ -798,7 +941,6 @@
                     }
                 }
 
-                // 二値化適用
                 for (let i = 0; i < d.length; i += 4) {
                     const val = d[i] < threshold ? 0 : 255;
                     d[i] = d[i + 1] = d[i + 2] = val;
@@ -818,11 +960,17 @@
             ctx.putImageData(imageData, 0, 0);
         }
 
-        // 後処理: 既知の誤読パターンを補正
+        // 後処理: 既知の誤読パターンを補正（v30強化版）
         function postProcessText(text) {
             let result = text;
+            // TrOCR先頭幻覚除去
+            result = result.replace(/^(R|RC|INC|REC|GST)(?=[A-Z]?\d)/i, '');
+            // 既知の誤読パターン補正
             result = result.replace(/^THNO/i, 'CHNO');
             result = result.replace(/^ITHNG/i, 'CHNO');
+            // AN0 → NO. 変換（新規）
+            result = result.replace(/^AN0/i, 'NO.');
+            result = result.replace(/^ANO/i, 'NO.');
             return result;
         }
 
@@ -846,15 +994,16 @@
 
                 const processedTrOCR = preprocessImage(canvas, false);
 
-                // パディング処理: 右側に白余白を追加
-                const padW = 80;
+                // パディング処理: 左右に余白を追加（v30: 左40px + 右80px）
+                const padL = 40;
+                const padR = 80;
                 const paddedCanvas = document.createElement('canvas');
-                paddedCanvas.width = processedTrOCR.width + padW;
+                paddedCanvas.width = processedTrOCR.width + padL + padR;
                 paddedCanvas.height = processedTrOCR.height;
                 const paddedCtx = paddedCanvas.getContext('2d');
                 paddedCtx.fillStyle = '#FFFFFF';
                 paddedCtx.fillRect(0, 0, paddedCanvas.width, paddedCanvas.height);
-                paddedCtx.drawImage(processedTrOCR, 0, 0);
+                paddedCtx.drawImage(processedTrOCR, padL, 0);
 
                 debugCanvas.width = paddedCanvas.width;
                 debugCanvas.height = paddedCanvas.height;
@@ -864,26 +1013,27 @@
                 let text = '';
                 let modelUsed = '';
 
-                if (!useFallback && ocrPipeline) {
+                // 軽量モードまたはフォールバック時はTrOCRをスキップ
+                if (!lightweightMode && !useFallback && ocrPipeline) {
                     loadingText.textContent = 'AI認識中...';
                     try {
                         const result = await ocrPipeline(paddedCanvas);
                         trOcrText = result[0]?.generated_text || '';
                         trOcrText = trOcrText.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
-                        trOcrText = trOcrText.replace(/^(R|RC|INC|REC|GST)(?=[A-Z]?\d)/i, '');
+                        trOcrText = postProcessText(trOcrText);
                     } catch (err) {
                         console.error('TrOCR failed:', err);
                     }
                 }
 
-                const lotPattern = /^[A-Z]{1,4}\d{5,8}$/;
+                const lotPattern = /^[A-Z]{1,4}[\.\d]{5,10}$/;
                 const trOcrMatch = lotPattern.test(trOcrText);
 
                 if (trOcrMatch) {
                     text = trOcrText;
                     modelUsed = 'TrOCR';
                 } else {
-                    loadingText.textContent = 'OCR再試行...';
+                    loadingText.textContent = lightweightMode ? '認識中...' : 'OCR再試行...';
 
                     const processedTess = preprocessImage(canvas, true);
 
@@ -892,7 +1042,7 @@
                     cleanTess = postProcessText(cleanTess);
 
                     text = cleanTess;
-                    modelUsed = trOcrText ? 'Tesseract(Retry)' : 'Tesseract';
+                    modelUsed = lightweightMode ? 'Tesseract' : (trOcrText ? 'Tesseract(Retry)' : 'Tesseract');
 
                     debugCanvas.width = processedTess.width;
                     debugCanvas.height = processedTess.height;
@@ -943,12 +1093,17 @@
                 const emailTo = localStorage.getItem('fieldScan_emailTo');
                 const emailSubject = localStorage.getItem('fieldScan_emailSubject');
                 const savedPrev = localStorage.getItem('fieldScan_preventDuplicate');
+                const savedLightweight = localStorage.getItem('fieldScan_lightweightMode');
                 const savedRotation = localStorage.getItem('fieldScan_rotation');
                 if (emailTo) document.getElementById('emailTo').value = emailTo;
                 if (emailSubject) document.getElementById('emailSubject').value = emailSubject;
                 if (savedPrev !== null) {
                     preventDuplicate = savedPrev === 'true';
                     preventDuplicateCheckbox.checked = preventDuplicate;
+                }
+                if (savedLightweight !== null) {
+                    lightweightMode = savedLightweight === 'true';
+                    lightweightModeCheckbox.checked = lightweightMode;
                 }
                 if (savedRotation !== null) {
                     rotationAngle = parseInt(savedRotation) || 0;
@@ -965,8 +1120,17 @@
                 localStorage.setItem('fieldScan_emailSubject', document.getElementById('emailSubject').value);
                 preventDuplicate = preventDuplicateCheckbox.checked;
                 localStorage.setItem('fieldScan_preventDuplicate', preventDuplicate);
+                const newLightweightMode = lightweightModeCheckbox.checked;
+                const modeChanged = newLightweightMode !== lightweightMode;
+                lightweightMode = newLightweightMode;
+                localStorage.setItem('fieldScan_lightweightMode', lightweightMode);
                 showSuccess("設定を保存しました");
                 bootstrap.Collapse.getInstance(document.getElementById('collapseSettings'))?.hide();
+
+                if (modeChanged) {
+                    showSuccess("モード変更しました。再読込します...");
+                    setTimeout(() => location.reload(), 1000);
+                }
             } catch (e) {
                 showError("設定の保存に失敗しました");
             }
@@ -989,6 +1153,10 @@
             updateUI();
         };
 
+        window.editScanResult = function (index) {
+            showEditDialog(index);
+        };
+
         function clearAll() {
             showConfirmDialog("リストをすべて削除しますか？", () => {
                 scanResults = [];
@@ -1005,11 +1173,12 @@
             } else {
                 scanList.innerHTML = scanResults.map((code, i) => `
                     <div class="scan-item">
-                        <span class="code">${code}</span>
+                        <span class="code" onclick="editScanResult(${i})" title="タップして編集">${code}</span>
                         <button class="btn btn-outline-danger btn-sm" onclick="removeScanResult(${i})">削除</button>
                     </div>
                 `).join('');
             }
+            updateLightweightDisplay();
         }
 
         function sendEmail() {
@@ -1034,6 +1203,7 @@
 
         window.addEventListener('load', async () => {
             loadFromLocal();
+            updateLightweightDisplay();
             await startCamera();
             await initOCR();
         });
