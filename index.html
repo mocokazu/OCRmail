@@ -4,12 +4,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>現場スキャンWeb v32</title>
+    <title>現場スキャンWeb v33</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" href="icons/icon-192.png">
     <meta name="theme-color" content="#212529">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-color: #1a1a1a;
@@ -186,7 +185,6 @@
             cursor: pointer;
             padding: 0.3rem 0.5rem;
             border-radius: 4px;
-            transition: background 0.2s;
         }
 
         .scan-item .code:hover {
@@ -228,7 +226,6 @@
             border: 4px solid white;
             box-shadow: 0 4px 20px rgba(220, 38, 38, 0.5);
             cursor: pointer;
-            transition: all 0.15s ease;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -441,6 +438,12 @@
             margin-top: 0.5rem;
         }
 
+        .timing-info {
+            color: #0ff;
+            font-size: 0.7rem;
+            margin-top: 0.3rem;
+        }
+
         .edit-content input {
             font-size: 1.5rem;
             font-family: monospace;
@@ -484,7 +487,7 @@
         </div>
     </div>
 
-    <div class="header">現場スキャンWeb v32</div>
+    <div class="header">現場スキャンWeb v33</div>
 
     <div id="cameraContainer">
         <video id="video" autoplay playsinline muted></video>
@@ -507,6 +510,7 @@
         <h6>OCR処理画像<span id="debugRotation"></span></h6>
         <canvas id="debugCanvas"></canvas>
         <div class="debug-info" id="debugInfo"></div>
+        <div class="timing-info" id="timingInfo"></div>
     </div>
 
     <div class="list-section">
@@ -533,12 +537,14 @@
                         </div>
                         <hr class="border-secondary">
                         <div class="mb-3">
-                            <label for="contrastSlider" class="form-label">コントラスト調整: <span
+                            <label for="contrastSlider" class="form-label">コントラスト: <span
                                     id="contrastValue">1.4</span></label>
                             <input type="range" class="form-range" id="contrastSlider" min="1.0" max="2.5" step="0.1"
                                 value="1.4">
-                            <div class="d-flex justify-content-between text-muted" style="font-size: 0.75rem;">
-                                <span>弱</span><span>強</span></div>
+                        </div>
+                        <div class="mb-3 form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="colorEnhance" checked>
+                            <label class="form-check-label text-white" for="colorEnhance">カラー文字強調</label>
                         </div>
                         <button class="btn btn-primary w-100 btn-lg" id="saveSettings">設定を保存</button>
                     </div>
@@ -566,12 +572,14 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script type="module">
+        // v33: パフォーマンス最適化 + HSV彩度強調 + タイミング計測
         import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3';
         env.allowLocalModels = false;
 
         let scanResults = [];
         let preventDuplicate = true;
         let contrastLevel = 1.4;
+        let colorEnhance = true;
         let stream = null;
         let isReady = false;
         let isProcessing = false;
@@ -580,6 +588,10 @@
         let ocrPipeline = null;
         let ocrReady = false;
         let editIndex = -1;
+
+        // キャッシュ用Canvas（再利用）
+        let cachedTmpCanvas = null;
+        let cachedPaddedCanvas = null;
 
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
@@ -590,6 +602,7 @@
         const debugCtx = debugCanvas.getContext('2d');
         const debugInfo = document.getElementById('debugInfo');
         const debugRotation = document.getElementById('debugRotation');
+        const timingInfo = document.getElementById('timingInfo');
         const guideFrame = document.getElementById('guideFrame');
         const guideProcessing = document.getElementById('guideProcessing');
         const cameraContainer = document.getElementById('cameraContainer');
@@ -599,6 +612,7 @@
         const scanList = document.getElementById('scanList');
         const scanCount = document.getElementById('scanCount');
         const preventDuplicateCheckbox = document.getElementById('preventDuplicate');
+        const colorEnhanceCheckbox = document.getElementById('colorEnhance');
         const errorToast = document.getElementById('errorToast');
         const errorText = document.getElementById('errorText');
         const successToast = document.getElementById('successToast');
@@ -624,7 +638,7 @@
                 gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
                 osc.start();
                 osc.stop(audioCtx.currentTime + 0.1);
-            } catch (e) { console.warn("Audio error:", e); }
+            } catch (e) { }
         }
 
         window.showError = function (msg) { errorText.textContent = msg; errorToast.classList.remove('d-none'); };
@@ -644,7 +658,6 @@
 
         document.getElementById('rotateBtn').addEventListener('click', () => { rotationAngle = (rotationAngle + 90) % 360; updateRotationDisplay(); localStorage.setItem('fieldScan_rotation', rotationAngle); });
         document.getElementById('rotateBtnCCW').addEventListener('click', () => { rotationAngle = (rotationAngle - 90 + 360) % 360; updateRotationDisplay(); localStorage.setItem('fieldScan_rotation', rotationAngle); });
-
         contrastSlider.addEventListener('input', () => { contrastLevel = parseFloat(contrastSlider.value); contrastValue.textContent = contrastLevel.toFixed(1); });
 
         function updateRotationDisplay() { rotationBadge.textContent = `回転: ${rotationAngle}°`; debugRotation.textContent = ` (${rotationAngle}°)`; }
@@ -658,9 +671,10 @@
                     progress_callback: (p) => { if (p.status === 'downloading') { modelBadge.textContent = `DL: ${Math.round((p.loaded / p.total) * 100)}%`; } }
                 });
                 ocrReady = true;
-                modelBadge.textContent = 'TrOCR (q4)';
+                modelBadge.textContent = 'TrOCR (GPU)';
                 modelBadge.style.background = 'rgba(0,200,100,0.9)';
             } catch (err) {
+                console.warn('WebGPU failed:', err);
                 try {
                     ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', { dtype: 'q8', device: 'wasm' });
                     ocrReady = true;
@@ -673,7 +687,7 @@
         async function startCamera() {
             try {
                 initAudio();
-                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } });
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } });
                 video.srcObject = stream;
                 video.onloadedmetadata = () => { isReady = true; shutterBtn.disabled = false; };
             } catch (e) { showError("カメラ起動失敗: " + e.message); }
@@ -701,23 +715,47 @@
             else if (rotationAngle === 270) aC = { x: sW - crop.y - crop.h, y: crop.x, w: crop.h, h: crop.w };
             aC.x = Math.max(0, Math.min(aC.x, sW - 1)); aC.y = Math.max(0, Math.min(aC.y, sH - 1));
             aC.w = Math.min(aC.w, sW - aC.x); aC.h = Math.min(aC.h, sH - aC.y);
-            const tW = 512, scale = tW / aC.w, tH = Math.floor(aC.h * scale);
+
+            // 最適化: 384幅（TrOCR標準入力サイズ）
+            const tW = 384, scale = tW / aC.w, tH = Math.floor(aC.h * scale);
             processCanvas.width = tW; processCanvas.height = tH;
             processCtx.save();
+
             if (rotationAngle !== 0) {
-                const tmp = document.createElement('canvas'); tmp.width = aC.w; tmp.height = aC.h;
-                tmp.getContext('2d').drawImage(src, aC.x, aC.y, aC.w, aC.h, 0, 0, aC.w, aC.h);
+                if (!cachedTmpCanvas) cachedTmpCanvas = document.createElement('canvas');
+                cachedTmpCanvas.width = aC.w; cachedTmpCanvas.height = aC.h;
+                cachedTmpCanvas.getContext('2d').drawImage(src, aC.x, aC.y, aC.w, aC.h, 0, 0, aC.w, aC.h);
                 if (rotationAngle === 90 || rotationAngle === 270) { processCanvas.width = tH; processCanvas.height = tW; }
                 processCtx.translate(processCanvas.width / 2, processCanvas.height / 2);
                 processCtx.rotate(rotationAngle * Math.PI / 180);
-                processCtx.drawImage(tmp, -aC.w * scale / 2, -aC.h * scale / 2, aC.w * scale, aC.h * scale);
-            } else { processCtx.drawImage(src, aC.x, aC.y, aC.w, aC.h, 0, 0, tW, tH); }
+                processCtx.drawImage(cachedTmpCanvas, -aC.w * scale / 2, -aC.h * scale / 2, aC.w * scale, aC.h * scale);
+            } else {
+                processCtx.drawImage(src, aC.x, aC.y, aC.w, aC.h, 0, 0, tW, tH);
+            }
             processCtx.restore();
+
             const w = processCanvas.width, h = processCanvas.height;
             const imgData = processCtx.getImageData(0, 0, w, h);
             const d = imgData.data;
+
             for (let i = 0; i < d.length; i += 4) {
-                let gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+                const r = d[i], g = d[i + 1], b = d[i + 2];
+
+                // HSV彩度チャネル活用（カラー文字強調）
+                if (colorEnhance) {
+                    const max = Math.max(r, g, b);
+                    const min = Math.min(r, g, b);
+                    const sat = max === 0 ? 0 : (max - min) / max;
+
+                    if (sat > 0.25) {
+                        // 彩度が高い → カラー文字 → 暗く表示
+                        d[i] = d[i + 1] = d[i + 2] = 0;
+                        continue;
+                    }
+                }
+
+                // 通常グレースケール + コントラスト
+                let gray = 0.299 * r + 0.587 * g + 0.114 * b;
                 gray = ((gray - 128) * contrastLevel) + 128;
                 gray = Math.max(0, Math.min(255, gray));
                 d[i] = d[i + 1] = d[i + 2] = gray;
@@ -737,21 +775,51 @@
         async function captureAndRecognize() {
             if (!isReady || isProcessing || !ocrReady) { if (!ocrReady) showError("OCR準備中..."); return; }
             isProcessing = true; shutterBtn.disabled = true; guideProcessing.classList.remove('d-none');
+
+            const t0 = performance.now();
+
             try {
+                // キャプチャ
                 canvas.width = video.videoWidth; canvas.height = video.videoHeight;
                 ctx.drawImage(video, 0, 0);
+                const t1 = performance.now();
+
+                // 前処理
                 const processed = preprocessImage(canvas);
+                const t2 = performance.now();
+
+                // パディング（キャッシュ使用）
                 const padL = 40, padR = 80;
-                const padded = document.createElement('canvas');
-                padded.width = processed.width + padL + padR; padded.height = processed.height;
-                const pCtx = padded.getContext('2d');
-                pCtx.fillStyle = '#FFFFFF'; pCtx.fillRect(0, 0, padded.width, padded.height);
+                if (!cachedPaddedCanvas) cachedPaddedCanvas = document.createElement('canvas');
+                cachedPaddedCanvas.width = processed.width + padL + padR;
+                cachedPaddedCanvas.height = processed.height;
+                const pCtx = cachedPaddedCanvas.getContext('2d');
+                pCtx.fillStyle = '#FFFFFF';
+                pCtx.fillRect(0, 0, cachedPaddedCanvas.width, cachedPaddedCanvas.height);
                 pCtx.drawImage(processed, padL, 0);
-                debugCanvas.width = padded.width; debugCanvas.height = padded.height;
-                debugCtx.drawImage(padded, 0, 0);
-                const result = await ocrPipeline(padded);
+                const t3 = performance.now();
+
+                // デバッグ表示
+                debugCanvas.width = cachedPaddedCanvas.width;
+                debugCanvas.height = cachedPaddedCanvas.height;
+                debugCtx.drawImage(cachedPaddedCanvas, 0, 0);
+
+                // OCR推論
+                const result = await ocrPipeline(cachedPaddedCanvas);
+                const t4 = performance.now();
+
                 let text = postProcessText(result[0]?.generated_text || '');
-                debugInfo.textContent = `TrOCR | ${text} | コントラスト: ${contrastLevel}`;
+
+                // タイミング表示
+                const timeCap = (t1 - t0).toFixed(0);
+                const timePrep = (t2 - t1).toFixed(0);
+                const timePad = (t3 - t2).toFixed(0);
+                const timeOCR = (t4 - t3).toFixed(0);
+                const timeTotal = (t4 - t0).toFixed(0);
+                timingInfo.textContent = `⏱ キャプチャ:${timeCap}ms 前処理:${timePrep}ms パディング:${timePad}ms OCR:${timeOCR}ms 合計:${timeTotal}ms`;
+
+                debugInfo.textContent = `TrOCR | ${text} | コントラスト:${contrastLevel} カラー強調:${colorEnhance ? 'ON' : 'OFF'}`;
+
                 if (text.length > 0) { showSuccess(`読取: ${text}`); addScanResult(text); }
                 else { showError("認識できませんでした"); }
             } catch (e) { console.error(e); showError("OCRエラー"); }
@@ -767,6 +835,7 @@
                 const p = localStorage.getItem('fieldScan_preventDuplicate'); if (p !== null) { preventDuplicate = p === 'true'; preventDuplicateCheckbox.checked = preventDuplicate; }
                 const r = localStorage.getItem('fieldScan_rotation'); if (r !== null) { rotationAngle = parseInt(r) || 0; updateRotationDisplay(); }
                 const c = localStorage.getItem('fieldScan_contrast'); if (c !== null) { contrastLevel = parseFloat(c); contrastSlider.value = contrastLevel; contrastValue.textContent = contrastLevel.toFixed(1); }
+                const ce = localStorage.getItem('fieldScan_colorEnhance'); if (ce !== null) { colorEnhance = ce === 'true'; colorEnhanceCheckbox.checked = colorEnhance; }
             } catch (e) { }
         }
         function saveSettings() {
@@ -776,6 +845,8 @@
                 preventDuplicate = preventDuplicateCheckbox.checked;
                 localStorage.setItem('fieldScan_preventDuplicate', preventDuplicate);
                 localStorage.setItem('fieldScan_contrast', contrastLevel);
+                colorEnhance = colorEnhanceCheckbox.checked;
+                localStorage.setItem('fieldScan_colorEnhance', colorEnhance);
                 showSuccess("設定を保存しました");
                 bootstrap.Collapse.getInstance(document.getElementById('collapseSettings'))?.hide();
             } catch (e) { showError("保存失敗"); }
