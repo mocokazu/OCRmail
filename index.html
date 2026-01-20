@@ -462,13 +462,13 @@
         let ocrPipeline = null;
         let ocrReady = false;
         let useFallback = false;
-        let tesseractWorker = null; // Workerを永続化
+        let tesseractWorker = null;
 
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d', { willReadFrequently: true }); // 最適化
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         const processCanvas = document.getElementById('processCanvas');
-        const processCtx = processCanvas.getContext('2d', { willReadFrequently: true }); // 最適化
+        const processCtx = processCanvas.getContext('2d', { willReadFrequently: true });
         const debugCanvas = document.getElementById('debugCanvas');
         const debugCtx = debugCanvas.getContext('2d');
         const debugInfo = document.getElementById('debugInfo');
@@ -574,14 +574,12 @@
             modelBadge.textContent = 'AI読込中...';
             modelBadge.style.background = 'rgba(255,165,0,0.9)';
 
-            // Tesseract Workerの初期化（並行して行う）
             initTesseractWorker().catch(e => console.error("Tesseract init failed:", e));
 
             try {
-                // Context 7最適化: q4量子化とWebGPU試行
                 ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
-                    dtype: 'q4', // q8 -> q4 (軽量化)
-                    device: 'webgpu', // WebGPU試行
+                    dtype: 'q4',
+                    device: 'webgpu',
                     progress_callback: (progress) => {
                         if (progress.status === 'downloading') {
                             const pct = Math.round((progress.loaded / progress.total) * 100);
@@ -597,7 +595,6 @@
             } catch (err) {
                 console.warn('WebGPU/q4 init failed, retrying with defaults:', err);
                 try {
-                    // フォールバック: CPU / q8
                     ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
                         dtype: 'q8',
                         device: 'wasm',
@@ -630,9 +627,7 @@
                     return;
                 }
 
-                if (stream && stream.active) {
-                    return;
-                }
+                if (stream && stream.active) return;
 
                 stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
@@ -728,7 +723,7 @@
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = actualCrop.w;
                 tempCanvas.height = actualCrop.h;
-                const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true }); // 最適化
+                const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
                 tempCtx.drawImage(src, actualCrop.x, actualCrop.y, actualCrop.w, actualCrop.h, 0, 0, actualCrop.w, actualCrop.h);
 
                 if (rotationAngle === 90 || rotationAngle === 270) {
@@ -756,46 +751,59 @@
             const imageData = ctx.getImageData(0, 0, w, h);
             const d = imageData.data;
 
-            // グレースケール変換
+            // Step 1: 彩度抽出（カラー文字対応）- 赤・黄など彩度の高い色を黒に変換
             for (let i = 0; i < d.length; i += 4) {
-                const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-                d[i] = d[i + 1] = d[i + 2] = gray;
+                const r = d[i], g = d[i + 1], b = d[i + 2];
+                const max = Math.max(r, g, b);
+                const min = Math.min(r, g, b);
+                const saturation = max === 0 ? 0 : (max - min) / max;
+
+                if (saturation > 0.3 && max > 50) {
+                    d[i] = d[i + 1] = d[i + 2] = 0; // カラー文字→黒
+                } else {
+                    const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                    d[i] = d[i + 1] = d[i + 2] = gray;
+                }
             }
 
             if (forTesseract) {
-                // Tesseract用: 適応的二値化 (Adaptive Thresholding)
-                const output = new Uint8ClampedArray(d.length);
-                const windowSize = 20; // 局所領域のサイズ
+                // Tesseract用: OTSU二値化（大津の方法）
+                const histogram = new Array(256).fill(0);
+                for (let i = 0; i < d.length; i += 4) {
+                    histogram[Math.round(d[i])]++;
+                }
 
-                for (let y = 0; y < h; y++) {
-                    for (let x = 0; x < w; x++) {
-                        const idx = (y * w + x) * 4;
-                        let sum = 0;
-                        let count = 0;
+                const totalPixels = w * h;
+                let sum = 0;
+                for (let i = 0; i < 256; i++) sum += i * histogram[i];
 
-                        // 近傍平均の計算
-                        for (let wy = -windowSize; wy <= windowSize; wy++) {
-                            for (let wx = -windowSize; wx <= windowSize; wx++) {
-                                const ny = y + wy;
-                                const nx = x + wx;
-                                if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-                                    sum += d[(ny * w + nx) * 4];
-                                    count++;
-                                }
-                            }
-                        }
-                        const mean = sum / count;
-                        // 平均より暗ければ黒、明るければ白 (C=10のオフセット)
-                        const val = d[idx] < (mean - 10) ? 0 : 255;
-                        output[idx] = output[idx + 1] = output[idx + 2] = val;
-                        output[idx + 3] = 255;
+                let sumB = 0, wB = 0, wF = 0;
+                let maxVariance = 0, threshold = 128;
+
+                for (let t = 0; t < 256; t++) {
+                    wB += histogram[t];
+                    if (wB === 0) continue;
+                    wF = totalPixels - wB;
+                    if (wF === 0) break;
+
+                    sumB += t * histogram[t];
+                    const mB = sumB / wB;
+                    const mF = (sum - sumB) / wF;
+                    const variance = wB * wF * (mB - mF) * (mB - mF);
+
+                    if (variance > maxVariance) {
+                        maxVariance = variance;
+                        threshold = t;
                     }
                 }
-                // 結果を書き戻し
-                for (let i = 0; i < d.length; i++) d[i] = output[i];
+
+                for (let i = 0; i < d.length; i += 4) {
+                    const val = d[i] < threshold ? 0 : 255;
+                    d[i] = d[i + 1] = d[i + 2] = val;
+                }
 
             } else {
-                // TrOCR用: コントラスト強調 (1.4倍) - 従来通り
+                // TrOCR用: コントラスト強調 (1.4倍)
                 const contrast = 1.4;
                 for (let i = 0; i < d.length; i += 4) {
                     let v = d[i];
@@ -806,6 +814,14 @@
             }
 
             ctx.putImageData(imageData, 0, 0);
+        }
+
+        // 後処理: 既知の誤読パターンを補正
+        function postProcessText(text) {
+            let result = text;
+            result = result.replace(/^THNO/i, 'CHNO');
+            result = result.replace(/^ITHNG/i, 'CHNO');
+            return result;
         }
 
         async function captureAndRecognize() {
@@ -826,11 +842,10 @@
                 canvas.height = video.videoHeight;
                 ctx.drawImage(video, 0, 0);
 
-                // 1. TrOCR用画像処理 (パディング追加)
                 const processedTrOCR = preprocessImage(canvas, false);
 
-                // パディング処理: 右側に白余白を追加して「文字終了」を明示
-                const padW = 50;
+                // パディング処理: 右側に白余白を追加（50px→80pxに増加）
+                const padW = 80;
                 const paddedCanvas = document.createElement('canvas');
                 paddedCanvas.width = processedTrOCR.width + padW;
                 paddedCanvas.height = processedTrOCR.height;
@@ -841,50 +856,42 @@
 
                 debugCanvas.width = paddedCanvas.width;
                 debugCanvas.height = paddedCanvas.height;
-                debugCtx.drawImage(paddedCanvas, 0, 0); // デバッグ表示はTrOCR用
+                debugCtx.drawImage(paddedCanvas, 0, 0);
 
-                // メモリ対策: 順次実行
                 let trOcrText = '';
                 let text = '';
                 let modelUsed = '';
 
-                // 1. TrOCR実行
                 if (!useFallback && ocrPipeline) {
                     loadingText.textContent = 'AI認識中...';
                     try {
-                        const result = await ocrPipeline(paddedCanvas); // パディング済み画像を使用
+                        const result = await ocrPipeline(paddedCanvas);
                         trOcrText = result[0]?.generated_text || '';
-
-                        // クリーンアップ
                         trOcrText = trOcrText.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
-                        // 既知の幻覚プレフィックス除去
                         trOcrText = trOcrText.replace(/^(R|RC|INC|REC|GST)(?=[A-Z]?\d)/i, '');
                     } catch (err) {
                         console.error('TrOCR failed:', err);
                     }
                 }
 
-                // パターン判定
-                const lotPattern = /^[A-Z]{1,3}\d{5,8}$/;
+                const lotPattern = /^[A-Z]{1,4}\d{5,8}$/;
                 const trOcrMatch = lotPattern.test(trOcrText);
 
                 if (trOcrMatch) {
                     text = trOcrText;
                     modelUsed = 'TrOCR';
                 } else {
-                    // 2. Tesseract実行 (TrOCR失敗時)
                     loadingText.textContent = 'OCR再試行...';
 
-                    // Tesseract用画像処理 (二値化)
                     const processedTess = preprocessImage(canvas, true);
 
                     const tesseractText = await recognizeWithTesseract(processedTess);
-                    const cleanTess = tesseractText.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
+                    let cleanTess = tesseractText.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
+                    cleanTess = postProcessText(cleanTess);
 
                     text = cleanTess;
                     modelUsed = trOcrText ? 'Tesseract(Retry)' : 'Tesseract';
 
-                    // デバッグ表示をTesseract用に更新（確認用）
                     debugCanvas.width = processedTess.width;
                     debugCanvas.height = processedTess.height;
                     debugCtx.drawImage(processedTess, 0, 0);
@@ -912,7 +919,6 @@
             if (!tesseractWorker) {
                 await initTesseractWorker();
             }
-            // Workerを再利用して認識
             const result = await tesseractWorker.recognize(image);
             return result.data.text;
         }
