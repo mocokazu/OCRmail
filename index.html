@@ -572,7 +572,6 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script type="module">
-        // v33: パフォーマンス最適化 + HSV彩度強調 + タイミング計測
         import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3';
         env.allowLocalModels = false;
 
@@ -589,7 +588,6 @@
         let ocrReady = false;
         let editIndex = -1;
 
-        // キャッシュ用Canvas（再利用）
         let cachedTmpCanvas = null;
         let cachedPaddedCanvas = null;
 
@@ -660,27 +658,74 @@
         document.getElementById('rotateBtnCCW').addEventListener('click', () => { rotationAngle = (rotationAngle - 90 + 360) % 360; updateRotationDisplay(); localStorage.setItem('fieldScan_rotation', rotationAngle); });
         contrastSlider.addEventListener('input', () => { contrastLevel = parseFloat(contrastSlider.value); contrastValue.textContent = contrastLevel.toFixed(1); });
 
-        function updateRotationDisplay() { rotationBadge.textContent = `回転: ${rotationAngle}°`; debugRotation.textContent = ` (${rotationAngle}°)`; }
+        function updateRotationDisplay() { rotationBadge.textContent = '回転: ' + rotationAngle + '°'; debugRotation.textContent = ' (' + rotationAngle + '°)'; }
 
+        // WebGPU事前チェック付きOCR初期化
         async function initOCR() {
             modelBadge.textContent = 'AI読込中...';
             modelBadge.style.background = 'rgba(255,165,0,0.9)';
+
+            // WebGPUサポートチェック
+            let useWebGPU = false;
             try {
-                ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
-                    dtype: 'q4', device: 'webgpu',
-                    progress_callback: (p) => { if (p.status === 'downloading') { modelBadge.textContent = `DL: ${Math.round((p.loaded / p.total) * 100)}%`; } }
-                });
-                ocrReady = true;
-                modelBadge.textContent = 'TrOCR (GPU)';
-                modelBadge.style.background = 'rgba(0,200,100,0.9)';
+                if ('gpu' in navigator) {
+                    const adapter = await navigator.gpu.requestAdapter();
+                    if (adapter) {
+                        useWebGPU = true;
+                        console.log('WebGPU adapter found');
+                    } else {
+                        console.log('WebGPU adapter not available');
+                    }
+                } else {
+                    console.log('navigator.gpu not available');
+                }
+            } catch (e) {
+                console.warn('WebGPU check failed:', e);
+            }
+            console.log('WebGPU available:', useWebGPU);
+
+            try {
+                if (useWebGPU) {
+                    console.log('Trying WebGPU with fp16...');
+                    ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
+                        dtype: 'fp16',
+                        device: 'webgpu',
+                        progress_callback: (p) => {
+                            if (p.status === 'downloading') {
+                                modelBadge.textContent = 'DL: ' + Math.round((p.loaded / p.total) * 100) + '%';
+                            }
+                        }
+                    });
+                    ocrReady = true;
+                    modelBadge.textContent = 'TrOCR (GPU)';
+                    modelBadge.style.background = 'rgba(0,200,100,0.9)';
+                    console.log('TrOCR initialized with WebGPU');
+                } else {
+                    throw new Error('WebGPU unavailable');
+                }
             } catch (err) {
-                console.warn('WebGPU failed:', err);
+                console.warn('WebGPU pipeline failed:', err.message);
                 try {
-                    ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', { dtype: 'q8', device: 'wasm' });
+                    console.log('Falling back to WASM...');
+                    ocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
+                        dtype: 'q8',
+                        device: 'wasm',
+                        progress_callback: (p) => {
+                            if (p.status === 'downloading') {
+                                modelBadge.textContent = 'DL: ' + Math.round((p.loaded / p.total) * 100) + '%';
+                            }
+                        }
+                    });
                     ocrReady = true;
                     modelBadge.textContent = 'TrOCR (CPU)';
                     modelBadge.style.background = 'rgba(0,150,150,0.9)';
-                } catch (e) { modelBadge.textContent = 'エラー'; modelBadge.style.background = 'rgba(220,53,69,0.9)'; showError('OCR初期化失敗'); }
+                    console.log('TrOCR initialized with WASM');
+                } catch (e) {
+                    console.error('All OCR init failed:', e);
+                    modelBadge.textContent = 'エラー';
+                    modelBadge.style.background = 'rgba(220,53,69,0.9)';
+                    showError('OCR初期化失敗');
+                }
             }
         }
 
@@ -709,14 +754,13 @@
         function preprocessImage(src) {
             const crop = calculateCropRegion();
             const sW = src.width, sH = src.height;
-            let aC = { ...crop };
+            let aC = { x: crop.x, y: crop.y, w: crop.w, h: crop.h };
             if (rotationAngle === 90) aC = { x: crop.y, y: sH - crop.x - crop.w, w: crop.h, h: crop.w };
             else if (rotationAngle === 180) aC = { x: sW - crop.x - crop.w, y: sH - crop.y - crop.h, w: crop.w, h: crop.h };
             else if (rotationAngle === 270) aC = { x: sW - crop.y - crop.h, y: crop.x, w: crop.h, h: crop.w };
             aC.x = Math.max(0, Math.min(aC.x, sW - 1)); aC.y = Math.max(0, Math.min(aC.y, sH - 1));
             aC.w = Math.min(aC.w, sW - aC.x); aC.h = Math.min(aC.h, sH - aC.y);
 
-            // 最適化: 384幅（TrOCR標準入力サイズ）
             const tW = 384, scale = tW / aC.w, tH = Math.floor(aC.h * scale);
             processCanvas.width = tW; processCanvas.height = tH;
             processCtx.save();
@@ -741,20 +785,16 @@
             for (let i = 0; i < d.length; i += 4) {
                 const r = d[i], g = d[i + 1], b = d[i + 2];
 
-                // HSV彩度チャネル活用（カラー文字強調）
                 if (colorEnhance) {
                     const max = Math.max(r, g, b);
                     const min = Math.min(r, g, b);
                     const sat = max === 0 ? 0 : (max - min) / max;
-
                     if (sat > 0.25) {
-                        // 彩度が高い → カラー文字 → 暗く表示
                         d[i] = d[i + 1] = d[i + 2] = 0;
                         continue;
                     }
                 }
 
-                // 通常グレースケール + コントラスト
                 let gray = 0.299 * r + 0.587 * g + 0.114 * b;
                 gray = ((gray - 128) * contrastLevel) + 128;
                 gray = Math.max(0, Math.min(255, gray));
@@ -779,16 +819,13 @@
             const t0 = performance.now();
 
             try {
-                // キャプチャ
                 canvas.width = video.videoWidth; canvas.height = video.videoHeight;
                 ctx.drawImage(video, 0, 0);
                 const t1 = performance.now();
 
-                // 前処理
                 const processed = preprocessImage(canvas);
                 const t2 = performance.now();
 
-                // パディング（キャッシュ使用）
                 const padL = 40, padR = 80;
                 if (!cachedPaddedCanvas) cachedPaddedCanvas = document.createElement('canvas');
                 cachedPaddedCanvas.width = processed.width + padL + padR;
@@ -799,28 +836,19 @@
                 pCtx.drawImage(processed, padL, 0);
                 const t3 = performance.now();
 
-                // デバッグ表示
                 debugCanvas.width = cachedPaddedCanvas.width;
                 debugCanvas.height = cachedPaddedCanvas.height;
                 debugCtx.drawImage(cachedPaddedCanvas, 0, 0);
 
-                // OCR推論
                 const result = await ocrPipeline(cachedPaddedCanvas);
                 const t4 = performance.now();
 
                 let text = postProcessText(result[0]?.generated_text || '');
 
-                // タイミング表示
-                const timeCap = (t1 - t0).toFixed(0);
-                const timePrep = (t2 - t1).toFixed(0);
-                const timePad = (t3 - t2).toFixed(0);
-                const timeOCR = (t4 - t3).toFixed(0);
-                const timeTotal = (t4 - t0).toFixed(0);
-                timingInfo.textContent = `⏱ キャプチャ:${timeCap}ms 前処理:${timePrep}ms パディング:${timePad}ms OCR:${timeOCR}ms 合計:${timeTotal}ms`;
+                timingInfo.textContent = '⏱ キャプチャ:' + (t1 - t0).toFixed(0) + 'ms 前処理:' + (t2 - t1).toFixed(0) + 'ms パディング:' + (t3 - t2).toFixed(0) + 'ms OCR:' + (t4 - t3).toFixed(0) + 'ms 合計:' + (t4 - t0).toFixed(0) + 'ms';
+                debugInfo.textContent = 'TrOCR | ' + text + ' | コントラスト:' + contrastLevel + ' カラー強調:' + (colorEnhance ? 'ON' : 'OFF');
 
-                debugInfo.textContent = `TrOCR | ${text} | コントラスト:${contrastLevel} カラー強調:${colorEnhance ? 'ON' : 'OFF'}`;
-
-                if (text.length > 0) { showSuccess(`読取: ${text}`); addScanResult(text); }
+                if (text.length > 0) { showSuccess('読取: ' + text); addScanResult(text); }
                 else { showError("認識できませんでした"); }
             } catch (e) { console.error(e); showError("OCRエラー"); }
             finally { guideProcessing.classList.add('d-none'); shutterBtn.disabled = false; isProcessing = false; }
@@ -861,13 +889,13 @@
         function updateUI() {
             scanCount.innerText = scanResults.length;
             if (scanResults.length === 0) { scanList.innerHTML = '<div class="p-3 text-center text-muted">データがありません。</div>'; }
-            else { scanList.innerHTML = scanResults.map((c, i) => `<div class="scan-item"><span class="code" onclick="editScanResult(${i})">${c}</span><button class="btn btn-outline-danger btn-sm" onclick="removeScanResult(${i})">削除</button></div>`).join(''); }
+            else { scanList.innerHTML = scanResults.map((c, i) => '<div class="scan-item"><span class="code" onclick="editScanResult(' + i + ')">' + c + '</span><button class="btn btn-outline-danger btn-sm" onclick="removeScanResult(' + i + ')">削除</button></div>').join(''); }
         }
         function sendEmail() {
             const to = document.getElementById('emailTo').value, sub = document.getElementById('emailSubject').value;
             if (!to) { showError("送信先を設定してください"); return; }
             if (scanResults.length === 0) { showError("データがありません"); return; }
-            window.location.href = `mailto:${to}?subject=${encodeURIComponent(sub)}&body=${encodeURIComponent(scanResults.join('\n'))}`;
+            window.location.href = 'mailto:' + to + '?subject=' + encodeURIComponent(sub) + '&body=' + encodeURIComponent(scanResults.join('\n'));
         }
 
         shutterBtn.addEventListener('click', captureAndRecognize);
