@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>OCR Scanner v38</title>
+    <title>OCR Scanner v39</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" href="icons/icon-192.png">
     <meta name="theme-color" content="#212529">
@@ -302,7 +302,7 @@
 
     <div class="header">
         <div style="width: 40px;"></div>
-        <div class="header-title">OCR Scanner v38</div>
+        <div class="header-title">OCR Scanner v39</div>
         <button class="lang-btn" id="langToggle">EN</button>
     </div>
 
@@ -564,7 +564,10 @@
                 const text = e.target.value;
                 if (!text) return;
 
-                const noPattern = /(?:No\.?|NO\.?)\s*([A-Z0-9-]+)/i;
+                // --- Enhanced Regex Patterns ---
+                // 1. No.XXXXX -> XXXXX (Extract after No.)
+                // Covers: No. / NO. / N0. (zero) / No / NO / N0
+                const noPattern = /(?:No|NO|N0)\.?\s*([A-Z0-9-]+)/i;
                 const noMatch = text.match(noPattern);
                 if (noMatch) {
                     addScanResult(noMatch[1].toUpperCase());
