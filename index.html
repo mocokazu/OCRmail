@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>OCR Scanner v34</title>
+    <title>OCR Scanner v35</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" href="icons/icon-192.png">
     <meta name="theme-color" content="#212529">
@@ -32,126 +32,40 @@
             font-size: 1rem;
         }
 
-        #cameraContainer {
-            position: relative;
-            width: 100%;
-            height: 55vh;
-            background: black;
-            overflow: hidden;
+        /* Input Area */
+        .input-section {
+            padding: 1rem;
+            background: #222;
+            border-bottom: 1px solid #444;
         }
 
-        #video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        #canvas,
-        #processCanvas {
-            display: none;
-        }
-
-        .guide-frame {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 90%;
-            height: 15%;
-            border: 2px solid #4ade80;
-            border-radius: 12px;
-            pointer-events: none;
-            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
-        }
-
-        .corner-marker {
-            position: absolute;
-            width: 20px;
-            height: 20px;
-            border-color: #22c55e;
-            border-style: solid;
-            border-width: 0;
-        }
-
-        .corner-tl {
-            top: -2px;
-            left: -2px;
-            border-top-width: 4px;
-            border-left-width: 4px;
-            border-top-left-radius: 8px;
-        }
-
-        .corner-tr {
-            top: -2px;
-            right: -2px;
-            border-top-width: 4px;
-            border-right-width: 4px;
-            border-top-right-radius: 8px;
-        }
-
-        .corner-bl {
-            bottom: -2px;
-            left: -2px;
-            border-bottom-width: 4px;
-            border-left-width: 4px;
-            border-bottom-left-radius: 8px;
-        }
-
-        .corner-br {
-            bottom: -2px;
-            right: -2px;
-            border-bottom-width: 4px;
-            border-right-width: 4px;
-            border-bottom-right-radius: 8px;
-        }
-
-        .guide-processing {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(74, 222, 128, 0.25);
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            animation: pulse 1s ease-in-out infinite;
-        }
-
-        .guide-processing.d-none {
-            display: none !important;
-        }
-
-        .guide-processing span {
-            color: white;
-            font-weight: bold;
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
-        }
-
-        @keyframes pulse {
-
-            0%,
-            100% {
-                opacity: 0.5;
-            }
-
-            50% {
-                opacity: 1;
-            }
-        }
-
-        .guide-text {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, calc(-50% - 80px));
+        #scanInput {
+            font-size: 1.5rem;
+            font-family: monospace;
+            text-transform: uppercase;
+            background: #333;
             color: #4ade80;
-            font-size: 0.9rem;
-            font-weight: 600;
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+            border: 2px solid #555;
+            border-radius: 12px;
+            width: 100%;
+            padding: 1rem;
+            resize: none;
         }
 
+        #scanInput:focus {
+            outline: none;
+            border-color: #4ade80;
+            box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.2);
+        }
+
+        .input-hint {
+            color: #888;
+            font-size: 0.8rem;
+            margin-top: 0.5rem;
+            text-align: center;
+        }
+
+        /* List Section */
         .list-section {
             padding: 1rem;
         }
@@ -204,139 +118,7 @@
             margin-bottom: 1rem;
         }
 
-        .shutter-bar {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: linear-gradient(to top, rgba(0, 0, 0, 0.95), transparent);
-            padding: 2rem 1rem;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 2rem;
-            z-index: 1000;
-        }
-
-        .shutter-btn {
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            background: #dc2626;
-            border: 4px solid white;
-            box-shadow: 0 4px 20px rgba(220, 38, 38, 0.5);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .shutter-btn::after {
-            content: '';
-            width: 64px;
-            height: 64px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        .shutter-btn:active {
-            transform: scale(0.9);
-            background: #b91c1c;
-        }
-
-        .shutter-btn:disabled {
-            background: #6b7280;
-            border-color: #9ca3af;
-            box-shadow: none;
-        }
-
-        .rotate-btn {
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background: #444;
-            border: 2px solid #666;
-            color: white;
-            font-size: 1.5rem;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.8);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 2000;
-            color: white;
-        }
-
-        .loading-overlay.d-none {
-            display: none !important;
-        }
-
-        .accordion-button {
-            background-color: #333;
-            color: white;
-        }
-
-        .accordion-button:not(.collapsed) {
-            background-color: #444;
-            color: white;
-        }
-
-        .accordion-body {
-            background-color: #2a2a2a;
-        }
-
-        .form-label {
-            color: white;
-        }
-
-        .counter-badge {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: rgba(0, 0, 0, 0.7);
-            color: #4ade80;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            font-size: 1.2rem;
-            font-weight: bold;
-        }
-
-        .rotation-badge {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background: rgba(255, 165, 0, 0.9);
-            color: white;
-            padding: 0.3rem 0.8rem;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            font-weight: bold;
-        }
-
-        .model-badge {
-            position: absolute;
-            bottom: 10px;
-            left: 10px;
-            background: rgba(0, 200, 100, 0.9);
-            color: white;
-            padding: 0.3rem 0.8rem;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: bold;
-        }
-
+        /* Toast & Dialogs */
         .error-toast {
             position: fixed;
             top: 50%;
@@ -413,56 +195,53 @@
             justify-content: center;
         }
 
-        .debug-section {
-            padding: 1rem;
-            background: #111;
-            border-top: 1px solid #333;
-        }
-
-        .debug-section h6 {
-            color: #ff0;
-            margin-bottom: 0.5rem;
-        }
-
-        #debugCanvas {
-            width: 100%;
-            max-height: 120px;
-            border: 2px solid #ff0;
-            border-radius: 8px;
-            object-fit: contain;
-        }
-
-        .debug-info {
-            color: #888;
-            font-size: 0.75rem;
-            margin-top: 0.5rem;
-        }
-
-        .timing-info {
-            color: #0ff;
-            font-size: 0.7rem;
-            margin-top: 0.3rem;
-        }
-
         .edit-content input {
             font-size: 1.5rem;
             font-family: monospace;
             text-align: center;
             text-transform: uppercase;
         }
+
+        /* Settings */
+        .accordion-button {
+            background-color: #333;
+            color: white;
+        }
+
+        .accordion-button:not(.collapsed) {
+            background-color: #444;
+            color: white;
+        }
+
+        .accordion-body {
+            background-color: #2a2a2a;
+        }
+
+        .form-label {
+            color: white;
+        }
+
+        .counter-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #4ade80;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
     </style>
 </head>
 
 <body>
-    <div class="loading-overlay d-none" id="loadingOverlay">
-        <div class="spinner-border text-light mb-3" role="status"></div>
-        <div id="loadingText">Loading...</div>
-    </div>
     <div class="error-toast d-none" id="errorToast">
         <div id="errorText"></div>
         <button class="btn btn-light btn-sm mt-2" onclick="hideError()">Close</button>
     </div>
     <div class="success-toast d-none" id="successToast"></div>
+
     <div class="confirm-dialog d-none" id="confirmDialog">
         <div class="confirm-content">
             <div id="confirmText"></div>
@@ -472,6 +251,7 @@
             </div>
         </div>
     </div>
+
     <div class="edit-dialog d-none" id="editDialog">
         <div class="edit-content">
             <h5 class="text-white mb-3">Edit Result</h5>
@@ -482,29 +262,15 @@
             </div>
         </div>
     </div>
-    <div class="header">OCR Scanner v34 (Tesseract)</div>
-    <div id="cameraContainer">
-        <video id="video" autoplay playsinline muted></video>
-        <div class="guide-frame" id="guideFrame">
-            <div class="corner-marker corner-tl"></div>
-            <div class="corner-marker corner-tr"></div>
-            <div class="corner-marker corner-bl"></div>
-            <div class="corner-marker corner-br"></div>
-            <div class="guide-processing d-none" id="guideProcessing"><span>Processing...</span></div>
-        </div>
-        <div class="guide-text">Align code in frame</div>
-        <div class="counter-badge"><span id="scanCount">0</span> items</div>
-        <div class="rotation-badge" id="rotationBadge">Rot: 0</div>
-        <div class="model-badge" id="modelBadge">Loading...</div>
+
+    <div class="header">OCR Scanner v35 (OS Native)</div>
+
+    <div class="input-section">
+        <textarea id="scanInput" rows="3" placeholder="Tap here -> 'Scan Text'" inputmode="text" autocomplete="off"
+            autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done"></textarea>
+        <div class="input-hint">Tap input area, then select "Scan Text" from keyboard</div>
     </div>
-    <canvas id="canvas"></canvas>
-    <canvas id="processCanvas"></canvas>
-    <div class="debug-section">
-        <h6>Debug<span id="debugRotation"></span></h6>
-        <canvas id="debugCanvas"></canvas>
-        <div class="debug-info" id="debugInfo"></div>
-        <div class="timing-info" id="timingInfo"></div>
-    </div>
+
     <div class="list-section">
         <div class="accordion mb-3" id="settingsAccordion">
             <div class="accordion-item border-0">
@@ -527,66 +293,35 @@
                             <input class="form-check-input" type="checkbox" role="switch" id="preventDuplicate" checked>
                             <label class="form-check-label text-white" for="preventDuplicate">Prevent Duplicates</label>
                         </div>
-                        <hr class="border-secondary">
-                        <div class="mb-3">
-                            <label for="contrastSlider" class="form-label">Contrast: <span
-                                    id="contrastValue">1.4</span></label>
-                            <input type="range" class="form-range" id="contrastSlider" min="1.0" max="2.5" step="0.1"
-                                value="1.4">
-                        </div>
                         <button class="btn btn-primary w-100 btn-lg" id="saveSettings">Save Settings</button>
                     </div>
                 </div>
             </div>
         </div>
+
         <div class="d-flex justify-content-between align-items-center mb-2">
-            <span class="text-large">Scan List <small class="text-muted">(tap to edit)</small></span>
+            <span class="text-large">Scan List (<span id="scanCount">0</span>)</span>
             <button class="btn btn-outline-danger btn-sm" id="clearList">Clear All</button>
         </div>
+
         <div class="scan-list" id="scanList">
             <div class="p-3 text-center text-muted">No data.</div>
         </div>
+
         <button class="btn btn-primary w-100 btn-send" id="sendEmail">Send Email</button>
     </div>
-    <div class="shutter-bar">
-        <button class="rotate-btn" id="rotateBtn">R</button>
-        <button class="shutter-btn" id="shutterBtn" disabled></button>
-        <button class="rotate-btn" id="rotateBtnCCW">L</button>
-    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script>
         (function () {
             'use strict';
 
             let scanResults = [];
             let preventDuplicate = true;
-            let contrastLevel = 1.4;
-            let stream = null;
-            let isReady = false;
-            let isProcessing = false;
             let confirmCallback = null;
-            let rotationAngle = 0;
-            let ocrReady = false;
             let editIndex = -1;
-            let tessWorker = null;
 
-            const video = document.getElementById('video');
-            const canvas = document.getElementById('canvas');
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            const processCanvas = document.getElementById('processCanvas');
-            const processCtx = processCanvas.getContext('2d', { willReadFrequently: true });
-            const debugCanvas = document.getElementById('debugCanvas');
-            const debugCtx = debugCanvas.getContext('2d');
-            const debugInfo = document.getElementById('debugInfo');
-            const debugRotation = document.getElementById('debugRotation');
-            const timingInfo = document.getElementById('timingInfo');
-            const guideFrame = document.getElementById('guideFrame');
-            const guideProcessing = document.getElementById('guideProcessing');
-            const cameraContainer = document.getElementById('cameraContainer');
-            const rotationBadge = document.getElementById('rotationBadge');
-            const modelBadge = document.getElementById('modelBadge');
-            const shutterBtn = document.getElementById('shutterBtn');
+            const scanInput = document.getElementById('scanInput');
             const scanList = document.getElementById('scanList');
             const scanCount = document.getElementById('scanCount');
             const preventDuplicateCheckbox = document.getElementById('preventDuplicate');
@@ -597,8 +332,6 @@
             const confirmText = document.getElementById('confirmText');
             const editDialog = document.getElementById('editDialog');
             const editInput = document.getElementById('editInput');
-            const contrastSlider = document.getElementById('contrastSlider');
-            const contrastValue = document.getElementById('contrastValue');
 
             let audioCtx = null;
             function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
@@ -633,189 +366,30 @@
             document.getElementById('editCancel').addEventListener('click', hideEditDialog);
             editInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') hideEditDialog(); });
 
-            document.getElementById('rotateBtn').addEventListener('click', function () { rotationAngle = (rotationAngle + 90) % 360; updateRotationDisplay(); localStorage.setItem('fieldScan_rotation', rotationAngle); });
-            document.getElementById('rotateBtnCCW').addEventListener('click', function () { rotationAngle = (rotationAngle - 90 + 360) % 360; updateRotationDisplay(); localStorage.setItem('fieldScan_rotation', rotationAngle); });
-            contrastSlider.addEventListener('input', function () { contrastLevel = parseFloat(contrastSlider.value); contrastValue.textContent = contrastLevel.toFixed(1); });
+            // Auto-scan logic
+            scanInput.addEventListener('input', (e) => {
+                const text = e.target.value;
+                if (!text) return;
 
-            function updateRotationDisplay() { rotationBadge.textContent = 'Rot: ' + rotationAngle; debugRotation.textContent = ' (' + rotationAngle + ')'; }
+                // Regex patterns for codes
+                // LB0302 (2 letters + 4+ digits)
+                // 18302 (5+ digits)
+                const patterns = [
+                    /[A-Z]{2}\d{4,}/,
+                    /\d{5,}/
+                ];
 
-            // Otsu threshold calculation
-            function otsuThreshold(histogram, total) {
-                var sum = 0, sumB = 0, wB = 0, wF = 0, maxVar = 0, threshold = 128;
-                for (var i = 0; i < 256; i++) sum += i * histogram[i];
-                for (var i = 0; i < 256; i++) {
-                    wB += histogram[i];
-                    if (wB === 0) continue;
-                    wF = total - wB;
-                    if (wF === 0) break;
-                    sumB += i * histogram[i];
-                    var mB = sumB / wB;
-                    var mF = (sum - sumB) / wF;
-                    var variance = wB * wF * Math.pow(mB - mF, 2);
-                    if (variance > maxVar) { maxVar = variance; threshold = i; }
-                }
-                return threshold;
-            }
-
-            // Tesseract Worker initialization
-            async function initTesseract() {
-                modelBadge.textContent = 'Loading Tesseract...';
-                modelBadge.style.background = 'rgba(255,165,0,0.9)';
-                try {
-                    tessWorker = await Tesseract.createWorker('eng', 1, {
-                        logger: function (m) {
-                            if (m.status === 'recognizing text') {
-                                modelBadge.textContent = 'OCR: ' + Math.round(m.progress * 100) + '%';
-                            }
-                        }
-                    });
-                    await tessWorker.setParameters({
-                        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.',
-                        tessedit_pageseg_mode: '7' // PSM.SINGLE_LINE
-                    });
-                    ocrReady = true;
-                    modelBadge.textContent = 'Tesseract';
-                    modelBadge.style.background = 'rgba(0,150,150,0.9)';
-                } catch (e) {
-                    modelBadge.textContent = 'Error';
-                    modelBadge.style.background = 'rgba(220,53,69,0.9)';
-                    window.showError('Tesseract init failed: ' + e.message);
-                }
-            }
-
-            async function startCamera() {
-                try {
-                    initAudio();
-                    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } });
-                    video.srcObject = stream;
-                    video.onloadedmetadata = function () { isReady = true; shutterBtn.disabled = false; };
-                } catch (e) { window.showError("Camera failed: " + e.message); }
-            }
-
-            function calculateCropRegion() {
-                var cW = cameraContainer.clientWidth, cH = cameraContainer.clientHeight;
-                var vW = video.videoWidth, vH = video.videoHeight;
-                var cRatio = cW / cH, vRatio = vW / vH;
-                var visW, visH, offX, offY;
-                if (vRatio > cRatio) { visH = vH; visW = cRatio * vH; offX = (vW - visW) / 2; offY = 0; }
-                else { visW = vW; visH = vW / cRatio; offX = 0; offY = (vH - visH) / 2; }
-                var gRect = guideFrame.getBoundingClientRect(), cRect = cameraContainer.getBoundingClientRect();
-                var gRelX = (gRect.left - cRect.left) / cW, gRelY = (gRect.top - cRect.top) / cH;
-                var gRelW = gRect.width / cW, gRelH = gRect.height / cH;
-                return { x: Math.floor(offX + gRelX * visW), y: Math.floor(offY + gRelY * visH), w: Math.floor(gRelW * visW), h: Math.floor(gRelH * visH) };
-            }
-
-            function preprocessImage(src) {
-                var crop = calculateCropRegion();
-                var sW = src.width, sH = src.height;
-                var aC = { x: crop.x, y: crop.y, w: crop.w, h: crop.h };
-                if (rotationAngle === 90) aC = { x: crop.y, y: sH - crop.x - crop.w, w: crop.h, h: crop.w };
-                else if (rotationAngle === 180) aC = { x: sW - crop.x - crop.w, y: sH - crop.y - crop.h, w: crop.w, h: crop.h };
-                else if (rotationAngle === 270) aC = { x: sW - crop.y - crop.h, y: crop.x, w: crop.h, h: crop.w };
-                aC.x = Math.max(0, Math.min(aC.x, sW - 1)); aC.y = Math.max(0, Math.min(aC.y, sH - 1));
-                aC.w = Math.min(aC.w, sW - aC.x); aC.h = Math.min(aC.h, sH - aC.y);
-
-                // Target: 30px char height (Tesseract optimal)
-                var targetHeight = 60; // assume char is ~50% of crop height
-                var scale = targetHeight / aC.h;
-                var tW = Math.floor(aC.w * scale);
-                var tH = Math.floor(aC.h * scale);
-
-                processCanvas.width = tW; processCanvas.height = tH;
-                processCtx.save();
-
-                if (rotationAngle !== 0) {
-                    var tmpCanvas = document.createElement('canvas');
-                    tmpCanvas.width = aC.w; tmpCanvas.height = aC.h;
-                    tmpCanvas.getContext('2d').drawImage(src, aC.x, aC.y, aC.w, aC.h, 0, 0, aC.w, aC.h);
-                    if (rotationAngle === 90 || rotationAngle === 270) { processCanvas.width = tH; processCanvas.height = tW; }
-                    processCtx.translate(processCanvas.width / 2, processCanvas.height / 2);
-                    processCtx.rotate(rotationAngle * Math.PI / 180);
-                    processCtx.drawImage(tmpCanvas, -tW / 2, -tH / 2, tW, tH);
-                } else {
-                    processCtx.drawImage(src, aC.x, aC.y, aC.w, aC.h, 0, 0, tW, tH);
-                }
-                processCtx.restore();
-
-                var w = processCanvas.width, h = processCanvas.height;
-                var imgData = processCtx.getImageData(0, 0, w, h);
-                var d = imgData.data;
-
-                // 1. Grayscale
-                var histogram = new Array(256).fill(0);
-                for (var i = 0; i < d.length; i += 4) {
-                    var gray = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
-                    d[i] = d[i + 1] = d[i + 2] = gray;
-                    histogram[gray]++;
+                let match = null;
+                for (let p of patterns) {
+                    const m = text.match(p);
+                    if (m) { match = m[0]; break; }
                 }
 
-                // 2. Otsu binarization
-                var threshold = otsuThreshold(histogram, w * h);
-                for (var i = 0; i < d.length; i += 4) {
-                    var val = d[i] > threshold ? 255 : 0;
-                    d[i] = d[i + 1] = d[i + 2] = val;
+                if (match) {
+                    addScanResult(match);
+                    scanInput.value = ''; // Clear for next scan
                 }
-
-                processCtx.putImageData(imgData, 0, 0);
-
-                // 3. Add padding (white border)
-                var paddedCanvas = document.createElement('canvas');
-                var pad = 20;
-                paddedCanvas.width = processCanvas.width + pad * 2;
-                paddedCanvas.height = processCanvas.height + pad * 2;
-                var pCtx = paddedCanvas.getContext('2d');
-                pCtx.fillStyle = '#FFFFFF';
-                pCtx.fillRect(0, 0, paddedCanvas.width, paddedCanvas.height);
-                pCtx.drawImage(processCanvas, pad, pad);
-
-                return paddedCanvas;
-            }
-
-            function postProcessText(text) {
-                var r = text.replace(/[^A-Za-z0-9.]/g, '').toUpperCase();
-                r = r.replace(/^(R|RC|INC|REC|GST)(?=[A-Z]?\d)/i, '');
-                r = r.replace(/^THNO/i, 'CHNO').replace(/^ITHNG/i, 'CHNO');
-                r = r.replace(/^AN0/i, 'NO.').replace(/^ANO/i, 'NO.');
-                // Common OCR mistakes
-                r = r.replace(/O(?=\d)/g, '0'); // O before digit -> 0
-                r = r.replace(/(?<=\d)O/g, '0'); // O after digit -> 0
-                r = r.replace(/I(?=\d)/g, '1'); // I before digit -> 1
-                r = r.replace(/(?<=\d)I/g, '1'); // I after digit -> 1
-                return r;
-            }
-
-            async function captureAndRecognize() {
-                if (!isReady || isProcessing || !ocrReady) { if (!ocrReady) window.showError("OCR not ready"); return; }
-                isProcessing = true; shutterBtn.disabled = true; guideProcessing.classList.remove('d-none');
-
-                var t0 = performance.now();
-                try {
-                    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-                    ctx.drawImage(video, 0, 0);
-                    var t1 = performance.now();
-
-                    var processed = preprocessImage(canvas);
-                    var t2 = performance.now();
-
-                    debugCanvas.width = processed.width;
-                    debugCanvas.height = processed.height;
-                    debugCtx.drawImage(processed, 0, 0);
-
-                    var result = await tessWorker.recognize(processed);
-                    var t3 = performance.now();
-
-                    var rawText = result.data.text || '';
-                    var text = postProcessText(rawText);
-                    var confidence = result.data.confidence || 0;
-
-                    timingInfo.textContent = 'Cap:' + (t1 - t0).toFixed(0) + 'ms Pre:' + (t2 - t1).toFixed(0) + 'ms OCR:' + (t3 - t2).toFixed(0) + 'ms Total:' + (t3 - t0).toFixed(0) + 'ms';
-                    debugInfo.textContent = 'Tesseract | Raw: ' + rawText.trim() + ' | Clean: ' + text + ' | Conf: ' + confidence.toFixed(0) + '%';
-
-                    if (text.length > 0 && confidence > 30) { showSuccess('Read: ' + text); addScanResult(text); }
-                    else { window.showError("Not recognized (conf: " + confidence.toFixed(0) + "%)"); }
-                } catch (e) { console.error(e); window.showError("OCR Error: " + e.message); }
-                finally { guideProcessing.classList.add('d-none'); shutterBtn.disabled = false; isProcessing = false; }
-            }
+            });
 
             function saveToLocal() { try { localStorage.setItem('fieldScan_results', JSON.stringify(scanResults)); } catch (e) { } }
             function loadFromLocal() {
@@ -824,8 +398,6 @@
                     var e = localStorage.getItem('fieldScan_emailTo'); if (e) document.getElementById('emailTo').value = e;
                     var es = localStorage.getItem('fieldScan_emailSubject'); if (es) document.getElementById('emailSubject').value = es;
                     var p = localStorage.getItem('fieldScan_preventDuplicate'); if (p !== null) { preventDuplicate = p === 'true'; preventDuplicateCheckbox.checked = preventDuplicate; }
-                    var r = localStorage.getItem('fieldScan_rotation'); if (r !== null) { rotationAngle = parseInt(r) || 0; updateRotationDisplay(); }
-                    var c = localStorage.getItem('fieldScan_contrast'); if (c !== null) { contrastLevel = parseFloat(c); contrastSlider.value = contrastLevel; contrastValue.textContent = contrastLevel.toFixed(1); }
                 } catch (e) { }
             }
             function saveSettings() {
@@ -834,7 +406,6 @@
                     localStorage.setItem('fieldScan_emailSubject', document.getElementById('emailSubject').value);
                     preventDuplicate = preventDuplicateCheckbox.checked;
                     localStorage.setItem('fieldScan_preventDuplicate', preventDuplicate);
-                    localStorage.setItem('fieldScan_contrast', contrastLevel);
                     showSuccess("Settings saved");
                     bootstrap.Collapse.getInstance(document.getElementById('collapseSettings'))?.hide();
                 } catch (e) { window.showError("Save failed"); }
@@ -842,6 +413,7 @@
             function addScanResult(code) {
                 if (preventDuplicate && scanResults.includes(code)) { window.showError("Duplicate: " + code); return; }
                 playBeep(); scanResults.unshift(code); saveToLocal(); updateUI();
+                showSuccess("Added: " + code);
             }
             window.removeScanResult = function (i) { scanResults.splice(i, 1); saveToLocal(); updateUI(); };
             window.editScanResult = function (i) { showEditDialog(i); };
@@ -864,15 +436,14 @@
                 window.location.href = 'mailto:' + to + '?subject=' + encodeURIComponent(sub) + '&body=' + encodeURIComponent(scanResults.join('\n'));
             }
 
-            shutterBtn.addEventListener('click', captureAndRecognize);
             document.getElementById('clearList').addEventListener('click', clearAll);
             document.getElementById('saveSettings').addEventListener('click', saveSettings);
             document.getElementById('sendEmail').addEventListener('click', sendEmail);
 
-            window.addEventListener('load', async function () {
+            window.addEventListener('load', function () {
                 loadFromLocal();
-                await startCamera();
-                await initTesseract();
+                initAudio();
+                scanInput.focus();
             });
 
             if ('serviceWorker' in navigator) {
