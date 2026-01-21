@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>OCR Scanner v36</title>
+    <title>OCR Scanner v37</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" href="icons/icon-192.png">
     <meta name="theme-color" content="#212529">
@@ -86,6 +86,27 @@
             font-size: 0.8rem;
             margin-top: 0.5rem;
             text-align: center;
+        }
+
+        /* Selection Area */
+        .selection-section {
+            padding: 1rem;
+            background: #2a2a2a;
+            border-bottom: 1px solid #444;
+        }
+
+        .form-select {
+            background-color: #333;
+            color: white;
+            border-color: #555;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-select:focus {
+            background-color: #444;
+            color: white;
+            border-color: #4ade80;
+            box-shadow: none;
         }
 
         /* List Section */
@@ -287,8 +308,8 @@
     </div>
 
     <div class="header">
-        <div style="width: 40px;"></div> <!-- Spacer -->
-        <div class="header-title">OCR Scanner v36</div>
+        <div style="width: 40px;"></div>
+        <div class="header-title">OCR Scanner v37</div>
         <button class="lang-btn" id="langToggle">EN</button>
     </div>
 
@@ -296,6 +317,15 @@
         <textarea id="scanInput" rows="3" placeholder="ここをタップ → 「テキストをスキャン」" inputmode="text" autocomplete="off"
             autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done"></textarea>
         <div class="input-hint" data-i18n="inputHint">入力欄をタップし、キーボードの「テキストをスキャン」を選択</div>
+    </div>
+
+    <div class="selection-section">
+        <select class="form-select form-select-lg" id="companySelect">
+            <option value="" selected disabled>社名を選択してください</option>
+        </select>
+        <select class="form-select form-select-lg" id="typeSelect">
+            <option value="" selected disabled>種別を選択してください</option>
+        </select>
     </div>
 
     <div class="list-section">
@@ -314,7 +344,7 @@
                         </div>
                         <div class="mb-3">
                             <label for="emailSubject" class="form-label" data-i18n="emailSubject">件名</label>
-                            <input type="text" class="form-control form-control-lg" id="emailSubject" value="作業報告">
+                            <input type="text" class="form-control form-control-lg" id="emailSubject" value="バーコード作成依頼">
                         </div>
                         <div class="mb-3 form-check form-switch">
                             <input class="form-check-input" type="checkbox" role="switch" id="preventDuplicate" checked>
@@ -344,6 +374,15 @@
     <script>
         (function () {
             'use strict';
+
+            // --- Customer Data Definition ---
+            const companyData = {
+                "（株）プライムポリマー　市原LL": ["LL-TY", "LL-TYS"],
+                "（株）プライムポリマー　市原EVL": ["EVL-TY", "EVL-TYT"],
+                "（株）プライムポリマー　市原HZ": ["HZ-TV", "HZ-TYS"],
+                "（株）プライムポリマー　市原PP": ["PP-TV", "PP-TT"]
+            };
+            // --------------------------------
 
             let scanResults = [];
             let preventDuplicate = true;
@@ -378,7 +417,9 @@
                     noDataToSend: '送信するデータがありません',
                     settingsSaved: '設定を保存しました',
                     saveFailed: '保存に失敗しました',
-                    delBtn: '削除'
+                    delBtn: '削除',
+                    selectCompany: '社名を選択してください',
+                    selectType: '種別を選択してください'
                 },
                 en: {
                     close: 'Close',
@@ -406,7 +447,9 @@
                     noDataToSend: 'No data to send',
                     settingsSaved: 'Settings saved',
                     saveFailed: 'Save failed',
-                    delBtn: 'Del'
+                    delBtn: 'Del',
+                    selectCompany: 'Select Company',
+                    selectType: 'Select Type'
                 }
             };
 
@@ -422,6 +465,8 @@
             const editDialog = document.getElementById('editDialog');
             const editInput = document.getElementById('editInput');
             const langToggle = document.getElementById('langToggle');
+            const companySelect = document.getElementById('companySelect');
+            const typeSelect = document.getElementById('typeSelect');
 
             let audioCtx = null;
             function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
@@ -455,10 +500,45 @@
 
                 scanInput.placeholder = t('inputPlaceholder');
 
-                // Update dynamic content
+                // Update select placeholders
+                if (companySelect.options[0]) companySelect.options[0].text = t('selectCompany');
+                if (typeSelect.options[0]) typeSelect.options[0].text = t('selectType');
+
                 updateUI();
                 localStorage.setItem('fieldScan_lang', lang);
             }
+
+            // --- Company & Type Logic ---
+            function initCompanySelect() {
+                companySelect.innerHTML = `<option value="" selected disabled>${t('selectCompany')}</option>`;
+                for (const company in companyData) {
+                    const option = document.createElement('option');
+                    option.value = company;
+                    option.textContent = company;
+                    companySelect.appendChild(option);
+                }
+            }
+
+            companySelect.addEventListener('change', function () {
+                const selectedCompany = this.value;
+                const types = companyData[selectedCompany] || [];
+
+                typeSelect.innerHTML = `<option value="" selected disabled>${t('selectType')}</option>`;
+                types.forEach(type => {
+                    const option = document.createElement('option');
+                    option.value = type;
+                    option.textContent = type;
+                    typeSelect.appendChild(option);
+                });
+
+                localStorage.setItem('fieldScan_company', selectedCompany);
+                localStorage.removeItem('fieldScan_type'); // Reset type when company changes
+            });
+
+            typeSelect.addEventListener('change', function () {
+                localStorage.setItem('fieldScan_type', this.value);
+            });
+            // ----------------------------
 
             langToggle.addEventListener('click', () => {
                 updateLanguage(currentLang === 'ja' ? 'en' : 'ja');
@@ -483,9 +563,20 @@
                 const text = e.target.value;
                 if (!text) return;
 
+                // --- Enhanced Regex Patterns ---
+                // 1. No.XXXXX -> XXXXX (Extract after No.)
+                const noPattern = /(?:No\.?|NO\.?)\s*([A-Z0-9-]+)/i;
+                const noMatch = text.match(noPattern);
+                if (noMatch) {
+                    addScanResult(noMatch[1].toUpperCase());
+                    scanInput.value = '';
+                    return;
+                }
+
+                // 2. Standard Patterns
                 const patterns = [
-                    /[A-Z]{2}\d{4,}/,
-                    /\d{5,}/
+                    /[A-Z]{2}\d{4,}/, // LB0302
+                    /\d{5,}/          // 18302
                 ];
 
                 let match = null;
@@ -508,8 +599,27 @@
                     var es = localStorage.getItem('fieldScan_emailSubject'); if (es) document.getElementById('emailSubject').value = es;
                     var p = localStorage.getItem('fieldScan_preventDuplicate'); if (p !== null) { preventDuplicate = p === 'true'; preventDuplicateCheckbox.checked = preventDuplicate; }
                     var l = localStorage.getItem('fieldScan_lang'); if (l) { updateLanguage(l); } else { updateLanguage('ja'); }
+
+                    // Load Company/Type
+                    initCompanySelect();
+                    var c = localStorage.getItem('fieldScan_company');
+                    if (c && companyData[c]) {
+                        companySelect.value = c;
+                        // Trigger change to populate types
+                        const types = companyData[c] || [];
+                        typeSelect.innerHTML = `<option value="" selected disabled>${t('selectType')}</option>`;
+                        types.forEach(type => {
+                            const option = document.createElement('option');
+                            option.value = type;
+                            option.textContent = type;
+                            typeSelect.appendChild(option);
+                        });
+                        var t_val = localStorage.getItem('fieldScan_type');
+                        if (t_val) typeSelect.value = t_val;
+                    }
+
                 } catch (e) { }
-                updateUI(); // Ensure UI is updated after loading
+                updateUI();
             }
             function saveSettings() {
                 try {
@@ -542,9 +652,21 @@
             }
             function sendEmail() {
                 var to = document.getElementById('emailTo').value, sub = document.getElementById('emailSubject').value;
+                var company = companySelect.value;
+                var type = typeSelect.value;
+
                 if (!to) { window.showError(t('setAddress')); return; }
                 if (scanResults.length === 0) { window.showError(t('noDataToSend')); return; }
-                window.location.href = 'mailto:' + to + '?subject=' + encodeURIComponent(sub) + '&body=' + encodeURIComponent(scanResults.join('\n'));
+
+                // --- Email Body Formatting ---
+                let body = '';
+                if (company) body += company + '\n';
+                if (type) body += type + '\n';
+                body += '\n'; // Empty line
+                body += scanResults.join('\n');
+                // -----------------------------
+
+                window.location.href = 'mailto:' + to + '?subject=' + encodeURIComponent(sub) + '&body=' + encodeURIComponent(body);
             }
 
             document.getElementById('clearList').addEventListener('click', clearAll);
