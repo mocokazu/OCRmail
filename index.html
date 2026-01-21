@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>OCR Scanner v37</title>
+    <title>OCR Scanner v38</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" href="icons/icon-192.png">
     <meta name="theme-color" content="#212529">
@@ -86,27 +86,6 @@
             font-size: 0.8rem;
             margin-top: 0.5rem;
             text-align: center;
-        }
-
-        /* Selection Area */
-        .selection-section {
-            padding: 1rem;
-            background: #2a2a2a;
-            border-bottom: 1px solid #444;
-        }
-
-        .form-select {
-            background-color: #333;
-            color: white;
-            border-color: #555;
-            margin-bottom: 0.5rem;
-        }
-
-        .form-select:focus {
-            background-color: #444;
-            color: white;
-            border-color: #4ade80;
-            box-shadow: none;
         }
 
         /* List Section */
@@ -265,6 +244,20 @@
             color: white;
         }
 
+        .form-select {
+            background-color: #333;
+            color: white;
+            border-color: #555;
+            margin-bottom: 1rem;
+        }
+
+        .form-select:focus {
+            background-color: #444;
+            color: white;
+            border-color: #4ade80;
+            box-shadow: none;
+        }
+
         .counter-badge {
             position: absolute;
             top: 10px;
@@ -309,7 +302,7 @@
 
     <div class="header">
         <div style="width: 40px;"></div>
-        <div class="header-title">OCR Scanner v37</div>
+        <div class="header-title">OCR Scanner v38</div>
         <button class="lang-btn" id="langToggle">EN</button>
     </div>
 
@@ -317,15 +310,6 @@
         <textarea id="scanInput" rows="3" placeholder="ここをタップ → 「テキストをスキャン」" inputmode="text" autocomplete="off"
             autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done"></textarea>
         <div class="input-hint" data-i18n="inputHint">入力欄をタップし、キーボードの「テキストをスキャン」を選択</div>
-    </div>
-
-    <div class="selection-section">
-        <select class="form-select form-select-lg" id="companySelect">
-            <option value="" selected disabled>社名を選択してください</option>
-        </select>
-        <select class="form-select form-select-lg" id="typeSelect">
-            <option value="" selected disabled>種別を選択してください</option>
-        </select>
     </div>
 
     <div class="list-section">
@@ -337,6 +321,19 @@
                 </h2>
                 <div id="collapseSettings" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
                     <div class="accordion-body">
+                        <div class="mb-3">
+                            <label class="form-label" data-i18n="company">社名</label>
+                            <select class="form-select form-select-lg" id="companySelect">
+                                <option value="" selected disabled>社名を選択してください</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" data-i18n="type">種別</label>
+                            <select class="form-select form-select-lg" id="typeSelect">
+                                <option value="" selected disabled>種別を選択してください</option>
+                            </select>
+                        </div>
+                        <hr class="border-secondary">
                         <div class="mb-3">
                             <label for="emailTo" class="form-label" data-i18n="emailTo">送信先メールアドレス</label>
                             <input type="email" class="form-control form-control-lg" id="emailTo"
@@ -400,6 +397,8 @@
                     inputPlaceholder: 'ここをタップ → 「テキストをスキャン」',
                     inputHint: '入力欄をタップし、キーボードの「テキストをスキャン」を選択',
                     settings: '設定',
+                    company: '社名',
+                    type: '種別',
                     emailTo: '送信先メールアドレス',
                     emailSubject: '件名',
                     preventDuplicate: '重複を防止する',
@@ -430,6 +429,8 @@
                     inputPlaceholder: 'Tap here -> "Scan Text"',
                     inputHint: 'Tap input area, then select "Scan Text" from keyboard',
                     settings: 'Settings',
+                    company: 'Company',
+                    type: 'Type',
                     emailTo: 'Email To',
                     emailSubject: 'Subject',
                     preventDuplicate: 'Prevent Duplicates',
@@ -467,6 +468,7 @@
             const langToggle = document.getElementById('langToggle');
             const companySelect = document.getElementById('companySelect');
             const typeSelect = document.getElementById('typeSelect');
+            const emailSubjectInput = document.getElementById('emailSubject');
 
             let audioCtx = null;
             function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
@@ -500,7 +502,6 @@
 
                 scanInput.placeholder = t('inputPlaceholder');
 
-                // Update select placeholders
                 if (companySelect.options[0]) companySelect.options[0].text = t('selectCompany');
                 if (typeSelect.options[0]) typeSelect.options[0].text = t('selectType');
 
@@ -532,7 +533,7 @@
                 });
 
                 localStorage.setItem('fieldScan_company', selectedCompany);
-                localStorage.removeItem('fieldScan_type'); // Reset type when company changes
+                localStorage.removeItem('fieldScan_type');
             });
 
             typeSelect.addEventListener('change', function () {
@@ -563,8 +564,6 @@
                 const text = e.target.value;
                 if (!text) return;
 
-                // --- Enhanced Regex Patterns ---
-                // 1. No.XXXXX -> XXXXX (Extract after No.)
                 const noPattern = /(?:No\.?|NO\.?)\s*([A-Z0-9-]+)/i;
                 const noMatch = text.match(noPattern);
                 if (noMatch) {
@@ -573,10 +572,9 @@
                     return;
                 }
 
-                // 2. Standard Patterns
                 const patterns = [
-                    /[A-Z]{2}\d{4,}/, // LB0302
-                    /\d{5,}/          // 18302
+                    /[A-Z]{2}\d{4,}/,
+                    /\d{5,}/
                 ];
 
                 let match = null;
@@ -596,16 +594,22 @@
                 try {
                     var s = localStorage.getItem('fieldScan_results'); if (s) { scanResults = JSON.parse(s); }
                     var e = localStorage.getItem('fieldScan_emailTo'); if (e) document.getElementById('emailTo').value = e;
-                    var es = localStorage.getItem('fieldScan_emailSubject'); if (es) document.getElementById('emailSubject').value = es;
+
+                    // Force update subject if it's the old default
+                    var es = localStorage.getItem('fieldScan_emailSubject');
+                    if (es && es !== '在庫報告') {
+                        emailSubjectInput.value = es;
+                    } else {
+                        emailSubjectInput.value = 'バーコード作成依頼'; // Force new default
+                    }
+
                     var p = localStorage.getItem('fieldScan_preventDuplicate'); if (p !== null) { preventDuplicate = p === 'true'; preventDuplicateCheckbox.checked = preventDuplicate; }
                     var l = localStorage.getItem('fieldScan_lang'); if (l) { updateLanguage(l); } else { updateLanguage('ja'); }
 
-                    // Load Company/Type
                     initCompanySelect();
                     var c = localStorage.getItem('fieldScan_company');
                     if (c && companyData[c]) {
                         companySelect.value = c;
-                        // Trigger change to populate types
                         const types = companyData[c] || [];
                         typeSelect.innerHTML = `<option value="" selected disabled>${t('selectType')}</option>`;
                         types.forEach(type => {
@@ -627,6 +631,11 @@
                     localStorage.setItem('fieldScan_emailSubject', document.getElementById('emailSubject').value);
                     preventDuplicate = preventDuplicateCheckbox.checked;
                     localStorage.setItem('fieldScan_preventDuplicate', preventDuplicate);
+
+                    // Save company/type selection as well
+                    if (companySelect.value) localStorage.setItem('fieldScan_company', companySelect.value);
+                    if (typeSelect.value) localStorage.setItem('fieldScan_type', typeSelect.value);
+
                     showSuccess(t('settingsSaved'));
                     bootstrap.Collapse.getInstance(document.getElementById('collapseSettings'))?.hide();
                 } catch (e) { window.showError(t('saveFailed')); }
@@ -658,13 +667,11 @@
                 if (!to) { window.showError(t('setAddress')); return; }
                 if (scanResults.length === 0) { window.showError(t('noDataToSend')); return; }
 
-                // --- Email Body Formatting ---
                 let body = '';
                 if (company) body += company + '\n';
                 if (type) body += type + '\n';
-                body += '\n'; // Empty line
+                body += '\n';
                 body += scanResults.join('\n');
-                // -----------------------------
 
                 window.location.href = 'mailto:' + to + '?subject=' + encodeURIComponent(sub) + '&body=' + encodeURIComponent(body);
             }
